@@ -11,10 +11,6 @@ from pathlib import Path
 from typing import Callable
 
 
-SNAPSHOT_DIRECTORY = Path("/timeshift/snapshots")
-SELINUX_ENFORCE = Path("/sys/fs/selinux/enforce")
-APPARMOR_ENABLED = Path("/sys/module/apparmor/parameters/enabled")
-APPARMOR_PROFILES = Path("/sys/kernel/security/apparmor/profiles")
 UFW_EXECUTABLE = Path("/usr/sbin/ufw")
 
 
@@ -73,82 +69,8 @@ def _firewall() -> dict[str, object]:
     }
 
 
-def _timeshift() -> dict[str, object]:
-    try:
-        snapshot_count = sum(path.is_dir() for path in SNAPSHOT_DIRECTORY.iterdir())
-    except OSError:
-        return {
-            "check_id": "timeshift",
-            "status": "unknown",
-            "message_id": "timeshift.path_unreadable",
-            "evidence": str(SNAPSHOT_DIRECTORY),
-        }
-
-    return {
-        "check_id": "timeshift",
-        "status": "unknown",
-        "message_id": (
-            "timeshift.snapshots_found" if snapshot_count else "timeshift.no_snapshots_at_default_path"
-        ),
-        "evidence": str(SNAPSHOT_DIRECTORY),
-        "data": {"count": snapshot_count},
-    }
-
-
-def _access_control() -> dict[str, object]:
-    try:
-        selinux_state = SELINUX_ENFORCE.read_text(encoding="ascii").strip()
-        if selinux_state == "1":
-            return {
-                "check_id": "access-control",
-                "status": "ok",
-                "message_id": "access_control.selinux_enforcing",
-                "evidence": str(SELINUX_ENFORCE),
-            }
-        if selinux_state == "0":
-            return {
-                "check_id": "access-control",
-                "status": "warning",
-                "message_id": "access_control.selinux_permissive",
-                "evidence": str(SELINUX_ENFORCE),
-            }
-    except OSError:
-        pass
-
-    try:
-        enabled = APPARMOR_ENABLED.read_text(encoding="ascii").strip().upper()
-        profiles = APPARMOR_PROFILES.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return {
-            "check_id": "access-control",
-            "status": "unknown",
-            "message_id": "access_control.status_unreadable",
-        }
-
-    enforced_count = sum("(enforce)" in line for line in profiles.splitlines())
-    if enabled == "Y" and enforced_count:
-        status = "ok"
-        message_id = "access_control.apparmor_enforcing"
-    elif enabled == "N":
-        status = "warning"
-        message_id = "access_control.apparmor_disabled"
-    else:
-        status = "unknown"
-        message_id = "access_control.apparmor_unconfirmed"
-
-    return {
-        "check_id": "access-control",
-        "status": status,
-        "message_id": message_id,
-        "evidence": str(APPARMOR_PROFILES),
-        "data": {"count": enforced_count},
-    }
-
-
 CHECKS: dict[str, Callable[[], dict[str, object]]] = {
     "firewall": _firewall,
-    "timeshift": _timeshift,
-    "access-control": _access_control,
 }
 
 

@@ -1,10 +1,8 @@
 import unittest
 import json
-import subprocess
 from unittest.mock import patch
 
 from mojitoshield_core import (
-    CHECKS,
     PRIVILEGED_CHECK_IDS,
     PrivilegedScanFailed,
     Status,
@@ -56,44 +54,6 @@ class AptSettingsTests(unittest.TestCase):
 
 
 class ResultTests(unittest.TestCase):
-    def test_all_original_topics_are_present_in_two_levels(self):
-        self.assertEqual(len(CHECKS), 11)
-        self.assertEqual([check.level for check in CHECKS].count(1), 8)
-        self.assertEqual([check.level for check in CHECKS].count(2), 3)
-
-    def test_unavailable_ufw_is_not_assumed_to_require_root(self):
-        firewall_check = next(check for check in CHECKS if check.check_id == "firewall")
-
-        with patch("mojitoshield_core._run_command", return_value=None):
-            result = firewall_check.run(firewall_check)
-
-        self.assertIs(result.status, Status.UNKNOWN)
-        self.assertEqual(result.message_id, "firewall.command_unavailable")
-
-    def test_ufw_root_requirement_does_not_depend_on_error_language(self):
-        firewall_check = next(check for check in CHECKS if check.check_id == "firewall")
-        error_texts = (
-            "ERROR: Du måste vara root för att köra detta skript",
-            "ERROR: You need to be root to run this script",
-            "ERREUR : vous devez être root pour exécuter ce script",
-            "FEHLER: Dieses Skript muss als root ausgeführt werden",
-        )
-
-        for error_text in error_texts:
-            command = subprocess.CompletedProcess(
-                args=["ufw", "status"],
-                returncode=1,
-                stdout="",
-                stderr=error_text,
-            )
-            with self.subTest(error_text=error_text), patch(
-                "mojitoshield_core._run_command", return_value=command
-            ):
-                result = firewall_check.run(firewall_check)
-
-            self.assertIs(result.status, Status.AUTH_REQUIRED)
-            self.assertEqual(result.message_id, "firewall.authorization_required")
-
     def test_commands_are_run_with_language_neutral_locale(self):
         with (
             patch("mojitoshield_core.shutil.which", return_value="/usr/bin/systemctl"),
@@ -144,7 +104,7 @@ class ResultTests(unittest.TestCase):
             _parse_privileged_output(("firewall",), output)
 
     def test_unallowlisted_check_is_rejected_before_authentication(self):
-        self.assertEqual(PRIVILEGED_CHECK_IDS, {"firewall", "timeshift", "access-control"})
+        self.assertEqual(PRIVILEGED_CHECK_IDS, {"firewall"})
         with patch("mojitoshield_core.privileged_helper_available") as is_available:
             with self.assertRaises(ValueError):
                 run_privileged_checks(("run-arbitrary-command",))

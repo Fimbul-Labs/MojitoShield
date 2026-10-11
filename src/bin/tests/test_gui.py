@@ -89,10 +89,10 @@ class WindowSmokeTests(unittest.TestCase):
         self.assertTrue(wait_until(lambda: self.scan_finished(window)))
 
         rows = window.check_list.get_children()
-        self.assertEqual(len(rows), 11)
-        self.assertEqual([row.check.level for row in rows], [1] * 8 + [2] * 3)
+        self.assertEqual(len(rows), 9)
+        self.assertEqual([row.check.level for row in rows], [1] * 7 + [2] * 2)
         headers = [row.get_header() for row in rows if row.get_header() is not None]
-        self.assertEqual([header.get_text() for header in headers], ["Level 1", "Level 2"])
+        self.assertEqual([header.get_text() for header in headers], ["Level 1: everyday protection", "Level 2: physical access"])
         self.assertEqual(window.check_list.get_selected_row().check.check_id, "firewall")
         self.assertEqual(window.detail_title.get_text(), "Firewall")
         self.assertEqual(rows[0].get_accessible().get_name(), "Firewall: OK")

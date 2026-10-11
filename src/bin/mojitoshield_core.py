@@ -1,9 +1,16 @@
-"""Read-only checks used by the MojitoShield prototype."""
+"""Read-only checks used by MojitoShield.
+
+Each check follows its contract in docs/check-contracts.md.
+"""
 
 from __future__ import annotations
 
-import logging
+import configparser
+import glob
+import gzip
+import ipaddress
 import json
+import logging
 import os
 import platform
 import re
@@ -11,38 +18,104 @@ import shutil
 import stat
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 
 LOGGER = logging.getLogger(__name__)
 
+# Firewall
+UFW_CONFIG = Path("/etc/ufw/ufw.conf")
+
+# System up to date
 APT_AUTO_UPGRADES = Path("/etc/apt/apt.conf.d/20auto-upgrades")
+APT_HISTORY_LOGS = (
+    Path("/var/log/apt/history.log"),
+    Path("/var/log/apt/history.log.1.gz"),
+)
 MINTUPDATE_AUTOMATION_SCRIPT = Path("/usr/lib/linuxmint/mintUpdate/automatic_upgrades.py")
 MINTUPDATE_UPGRADE_FLAG = Path("/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled")
 MINTUPDATE_UPGRADE_TIMER = "mintupdate-automation-upgrade.timer"
+REBOOT_REQUIRED = Path("/var/run/reboot-required")
+UPDATES_MAX_AGE_DAYS = 30
+REBOOT_PENDING_MAX_DAYS = 7
+
+# Automatic login
+DISPLAY_MANAGER_FILE = Path("/etc/X11/default-display-manager")
+# Read in this order, later values winning, as Mint's Login Window tool does.
+LIGHTDM_CONFIG_SOURCES = (
+    Path("/usr/share/lightdm/lightdm.conf.d"),
+    Path("/etc/lightdm/lightdm.conf.d"),
+    Path("/etc/lightdm/lightdm.conf"),
+)
+LIGHTDM_SEAT_GROUPS = ("SeatDefaults", "Seat:*", "Seat:seat0")
+
+# Timeshift
+TIMESHIFT_EXECUTABLE = Path("/usr/bin/timeshift")
 TIMESHIFT_CONFIG = Path("/etc/timeshift/timeshift.json")
 TIMESHIFT_SNAPSHOTS = Path("/timeshift/snapshots")
 TIMESHIFT_SCHEDULES = ("monthly", "weekly", "daily", "hourly", "boot")
-SELINUX_ENFORCE = Path("/sys/fs/selinux/enforce")
-APPARMOR_ENABLED = Path("/sys/module/apparmor/parameters/enabled")
-APPARMOR_PROFILES = Path("/sys/kernel/security/apparmor/profiles")
-RFKILL_DIRECTORY = Path("/sys/class/rfkill")
+TIMESHIFT_SCHEDULE_DAYS = {"hourly": 1 / 24, "daily": 1, "weekly": 7, "monthly": 30}
+TIMESHIFT_MIN_AGE_LIMIT_DAYS = 7
+TIMESHIFT_MAX_AGE_LIMIT_DAYS = 40
 
-# Desktop name shown to the user, and the read-only query for its lock setting.
+# Network services
+PROC_NET_TCP = ((Path("/proc/net/tcp"), False), (Path("/proc/net/tcp6"), True))
+TCP_LISTEN_STATE = "0A"
+SSH_PORT = 22
+REMOTE_DESKTOP_PORTS = frozenset({23, 3389, *range(5900, 6000)})
+SSH_CONFIG = Path("/etc/ssh/sshd_config")
+SYS_CLASS_NET = Path("/sys/class/net")
+
+# AppArmor
+APPARMOR_ENABLED = Path("/sys/module/apparmor/parameters/enabled")
+
+# Disk encryption
+CHASSIS_TYPE = Path("/sys/class/dmi/id/chassis_type")
+# SMBIOS chassis types for portable computers.
+PORTABLE_CHASSIS_TYPES = frozenset({8, 9, 10, 11, 14, 30, 31, 32})
+
+
+@dataclass(frozen=True)
+class ScreenLockSettings:
+    name: str
+    lock_query: list[str]
+    idle_delay_query: list[str]
+    idle_delay_unit_seconds: int
+    idle_enabled_query: list[str] | None = None
+
+
 SCREEN_LOCK_SETTINGS = {
-    "cinnamon": (
-        "Cinnamon",
-        ["gsettings", "get", "org.cinnamon.desktop.screensaver", "lock-enabled"],
+    "cinnamon": ScreenLockSettings(
+        name="Cinnamon",
+        lock_query=["gsettings", "get", "org.cinnamon.desktop.screensaver", "lock-enabled"],
+        idle_delay_query=["gsettings", "get", "org.cinnamon.desktop.session", "idle-delay"],
+        idle_delay_unit_seconds=1,
     ),
-    "mate": (
-        "MATE",
-        ["gsettings", "get", "org.mate.screensaver", "lock-enabled"],
+    "mate": ScreenLockSettings(
+        name="MATE",
+        lock_query=["gsettings", "get", "org.mate.screensaver", "lock-enabled"],
+        idle_delay_query=["gsettings", "get", "org.mate.session", "idle-delay"],
+        idle_delay_unit_seconds=60,
+        idle_enabled_query=[
+            "gsettings", "get", "org.mate.screensaver", "idle-activation-enabled",
+        ],
     ),
-    "xfce": (
-        "Xfce",
-        ["xfconf-query", "--channel", "xfce4-screensaver", "--property", "/lock/enabled"],
+    "xfce": ScreenLockSettings(
+        name="Xfce",
+        lock_query=[
+            "xfconf-query", "--channel", "xfce4-screensaver", "--property", "/lock/enabled",
+        ],
+        idle_delay_query=[
+            "xfconf-query", "--channel", "xfce4-screensaver",
+            "--property", "/saver/idle-activation/delay",
+        ],
+        idle_delay_unit_seconds=60,
+        idle_enabled_query=[
+            "xfconf-query", "--channel", "xfce4-screensaver", "--property", "/saver/enabled",
+        ],
     ),
 }
 
@@ -96,68 +169,12 @@ def current_distribution() -> tuple[bool, str | None]:
     return identify_distribution(release), name
 
 
-def parse_apt_auto_updates(contents: str) -> bool | None:
-    """Parse the two APT periodic settings relevant to automatic updates."""
-    keys = {
-        "Update-Package-Lists": None,
-        "Unattended-Upgrade": None,
-    }
-    pattern = re.compile(
-        r'^\s*APT::Periodic::(Update-Package-Lists|Unattended-Upgrade)'
-        r'\s+["\']?([01])["\']?\s*;'
-    )
-
-    for line in contents.splitlines():
-        match = pattern.match(line)
-        if match:
-            keys[match.group(1)] = match.group(2) == "1"
-
-    if any(value is None for value in keys.values()):
-        return None
-    return all(keys.values())
+def _now() -> datetime:
+    return datetime.now()
 
 
-@dataclass(frozen=True)
-class TimeshiftSettings:
-    configured: bool
-    btrfs_mode: bool
-    scheduled: bool
-    backup_device_uuid: str
-
-
-def parse_timeshift_settings(contents: str) -> TimeshiftSettings | None:
-    """Parse the Timeshift settings that tell where and when snapshots are made."""
-    try:
-        settings = json.loads(contents)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(settings, dict):
-        return None
-
-    backup_device_uuid = settings.get("backup_device_uuid", "")
-    if not isinstance(backup_device_uuid, str):
-        return None
-
-    def enabled(key: str) -> bool:
-        # Timeshift stores booleans as the strings "true" and "false".
-        return str(settings.get(key, "")).lower() == "true"
-
-    return TimeshiftSettings(
-        configured=bool(backup_device_uuid.strip()) and not enabled("do_first_run"),
-        btrfs_mode=enabled("btrfs_mode"),
-        scheduled=any(enabled(f"schedule_{name}") for name in TIMESHIFT_SCHEDULES),
-        backup_device_uuid=backup_device_uuid.strip(),
-    )
-
-
-def parse_findmnt_pairs(output: str) -> dict[str, str]:
-    """Parse one line of `findmnt --pairs` output."""
-    return dict(re.findall(r'([A-Z]+)="([^"]*)"', output))
-
-
-def block_device_from_mount_source(source: str) -> str:
-    """Drop the btrfs subvolume suffix, as in /dev/sda2[/@home]."""
-    return re.sub(r"\[[^\]]*\]$", "", source)
+def _days_since(moment: datetime) -> float:
+    return max(0.0, (_now() - moment).total_seconds() / 86400)
 
 
 def _result(
@@ -195,28 +212,92 @@ def _run_command(arguments: list[str]) -> subprocess.CompletedProcess[str] | Non
         return None
 
 
+# 1. Firewall
+
+
+def parse_ufw_enabled(contents: str) -> bool | None:
+    """Return the ENABLED value of ufw.conf; the file is a shell fragment, so the last one wins."""
+    enabled = None
+    for line in contents.splitlines():
+        match = re.match(r'^\s*ENABLED\s*=\s*["\']?(yes|no)["\']?\s*$', line, re.IGNORECASE)
+        if match:
+            enabled = match.group(1).lower() == "yes"
+    return enabled
+
+
 def _check_firewall(check: CheckDefinition) -> CheckResult:
-    command = _run_command(["ufw", "status"])
-    if command is None:
-        return _result(check, Status.UNKNOWN, "firewall.command_unavailable")
-    if command.returncode != 0:
+    try:
+        contents = UFW_CONFIG.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return _result(check, Status.UNKNOWN, "firewall.ufw_not_installed")
+    except (OSError, UnicodeError):
         return _result(check, Status.AUTH_REQUIRED, "firewall.authorization_required")
 
-    status_line = next(
-        (line.strip().lower() for line in command.stdout.splitlines()
-         if line.strip().lower().startswith("status:")),
-        "",
+    enabled = parse_ufw_enabled(contents)
+    if enabled is False:
+        return _result(check, Status.WARNING, "firewall.disabled", str(UFW_CONFIG))
+    if enabled is None:
+        return _result(check, Status.AUTH_REQUIRED, "firewall.authorization_required")
+
+    service = _run_command(["systemctl", "is-active", "ufw"])
+    if service is not None and service.stdout.strip() == "active":
+        return _result(check, Status.OK, "firewall.enabled", str(UFW_CONFIG))
+    return _result(check, Status.AUTH_REQUIRED, "firewall.service_not_confirmed")
+
+
+# 2. System up to date
+
+
+def parse_apt_auto_updates(contents: str) -> bool | None:
+    """Parse the two APT periodic settings relevant to automatic updates."""
+    keys = {
+        "Update-Package-Lists": None,
+        "Unattended-Upgrade": None,
+    }
+    pattern = re.compile(
+        r'^\s*APT::Periodic::(Update-Package-Lists|Unattended-Upgrade)'
+        r'\s+["\']?([01])["\']?\s*;'
     )
-    if status_line == "status: active":
-        return _result(check, Status.OK, "firewall.active", status_line)
-    if status_line == "status: inactive":
-        return _result(
-            check,
-            Status.WARNING,
-            "firewall.inactive",
-            status_line,
-        )
-    return _result(check, Status.UNKNOWN, "firewall.unrecognized_status")
+
+    for line in contents.splitlines():
+        match = pattern.match(line)
+        if match:
+            keys[match.group(1)] = match.group(2) == "1"
+
+    if any(value is None for value in keys.values()):
+        return None
+    return all(keys.values())
+
+
+def latest_upgrade_time(history: str) -> datetime | None:
+    """Return the start time of the newest APT history entry that upgraded packages."""
+    latest = None
+    started = None
+    for line in history.splitlines():
+        if line.startswith("Start-Date:"):
+            try:
+                started = datetime.strptime(
+                    " ".join(line.split(":", 1)[1].split()), "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                started = None
+        elif line.startswith("Upgrade:") and started is not None:
+            if latest is None or started > latest:
+                latest = started
+    return latest
+
+
+def _read_apt_history() -> list[str]:
+    histories = []
+    for path in APT_HISTORY_LOGS:
+        try:
+            raw = path.read_bytes()
+            if path.suffix == ".gz":
+                raw = gzip.decompress(raw)
+        except (OSError, EOFError, gzip.BadGzipFile):
+            continue
+        histories.append(raw.decode("utf-8", errors="replace"))
+    return histories
 
 
 def _mintupdate_automation_enabled() -> bool | None:
@@ -235,204 +316,55 @@ def _mintupdate_automation_enabled() -> bool | None:
     return flag_present and command.stdout.strip() == "enabled"
 
 
-def _check_automatic_updates(check: CheckDefinition) -> CheckResult:
-    apt_result = _check_apt_auto_updates(check)
-    if apt_result.status is Status.OK:
-        return apt_result
-
-    mintupdate_enabled = _mintupdate_automation_enabled()
-    if mintupdate_enabled is None:
-        return apt_result
-    if mintupdate_enabled:
-        return _result(
-            check, Status.OK, "updates.mintupdate_automation_enabled", MINTUPDATE_UPGRADE_TIMER
-        )
-    return _result(
-        check, Status.WARNING, "updates.mintupdate_automation_disabled", MINTUPDATE_UPGRADE_TIMER
-    )
-
-
-def _check_apt_auto_updates(check: CheckDefinition) -> CheckResult:
-    settings_file = APT_AUTO_UPGRADES
+def _automatic_updates_source() -> str | None:
+    """Return what installs updates automatically, if anything does."""
     try:
-        contents = settings_file.read_text(encoding="utf-8")
-    except PermissionError:
-        return _result(check, Status.AUTH_REQUIRED, "updates.authorization_required")
+        if parse_apt_auto_updates(APT_AUTO_UPGRADES.read_text(encoding="utf-8")):
+            return str(APT_AUTO_UPGRADES)
     except (OSError, UnicodeError):
-        return _result(check, Status.UNKNOWN, "updates.settings_unreadable")
-
-    enabled = parse_apt_auto_updates(contents)
-    if enabled is None:
-        return _result(
-            check,
-            Status.UNKNOWN,
-            "updates.settings_unparseable",
-            str(settings_file),
-        )
-    if enabled:
-        return _result(
-            check,
-            Status.OK,
-            "updates.enabled",
-            str(settings_file),
-        )
-    return _result(
-        check,
-        Status.WARNING,
-        "updates.disabled",
-        str(settings_file),
-    )
+        pass
+    if _mintupdate_automation_enabled():
+        return MINTUPDATE_UPGRADE_TIMER
+    return None
 
 
-def _read_timeshift_settings() -> TimeshiftSettings | None:
+def _reboot_pending_days() -> float | None:
     try:
-        contents = TIMESHIFT_CONFIG.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return None
-    return parse_timeshift_settings(contents)
-
-
-def _root_filesystem_uuid() -> str | None:
-    command = _run_command(["findmnt", "--noheadings", "--output", "UUID", "--target", "/"])
-    if command is None or command.returncode != 0:
-        return None
-    return command.stdout.strip() or None
-
-
-def _check_timeshift(check: CheckDefinition) -> CheckResult:
-    settings = _read_timeshift_settings()
-    if settings is not None:
-        config = str(TIMESHIFT_CONFIG)
-        if not settings.configured:
-            return _result(check, Status.UNKNOWN, "timeshift.not_configured", config)
-        if not settings.scheduled:
-            return _result(check, Status.UNKNOWN, "timeshift.configured_without_schedule", config)
-        if settings.btrfs_mode:
-            # Btrfs snapshots are only mounted while Timeshift runs, so they are not counted.
-            return _result(check, Status.UNKNOWN, "timeshift.btrfs_scheduled", config)
-        root_uuid = _root_filesystem_uuid()
-        if root_uuid is not None and root_uuid != settings.backup_device_uuid:
-            return _result(check, Status.UNKNOWN, "timeshift.scheduled_on_separate_device", config)
-
-    snapshots = TIMESHIFT_SNAPSHOTS
-    try:
-        snapshot_count = sum(path.is_dir() for path in snapshots.iterdir())
-    except PermissionError:
-        return _result(check, Status.AUTH_REQUIRED, "timeshift.authorization_required", str(snapshots))
+        modified = REBOOT_REQUIRED.stat().st_mtime
     except OSError:
+        return None
+    return _days_since(datetime.fromtimestamp(modified))
+
+
+def _check_updates(check: CheckDefinition) -> CheckResult:
+    reboot_days = _reboot_pending_days()
+    if reboot_days is not None and reboot_days > REBOOT_PENDING_MAX_DAYS:
         return _result(
-            check,
-            Status.UNKNOWN,
-            "timeshift.path_unreadable",
-            str(snapshots),
+            check, Status.WARNING, "updates.reboot_pending", str(REBOOT_REQUIRED),
+            {"days": str(int(reboot_days))},
         )
 
-    if snapshot_count:
-        return _result(
-            check,
-            Status.UNKNOWN,
-            "timeshift.snapshots_found",
-            str(snapshots),
-            {"count": str(snapshot_count)},
-        )
-    return _result(
-        check,
-        Status.UNKNOWN,
-        "timeshift.no_snapshots_at_default_path",
-        str(snapshots),
-    )
+    source = _automatic_updates_source()
+    if source is not None:
+        return _result(check, Status.OK, "updates.automatic", source)
+
+    upgrade_times = [
+        moment
+        for history in _read_apt_history()
+        if (moment := latest_upgrade_time(history)) is not None
+    ]
+    if not upgrade_times:
+        return _result(check, Status.UNKNOWN, "updates.history_unavailable")
+
+    days = _days_since(max(upgrade_times))
+    data = {"days": str(int(days))}
+    evidence = str(APT_HISTORY_LOGS[0])
+    if days <= UPDATES_MAX_AGE_DAYS:
+        return _result(check, Status.OK, "updates.recently_installed", evidence, data)
+    return _result(check, Status.WARNING, "updates.not_installed_recently", evidence, data)
 
 
-def _check_access_control(check: CheckDefinition) -> CheckResult:
-    selinux_enforce = SELINUX_ENFORCE
-    try:
-        selinux_state = selinux_enforce.read_text(encoding="ascii").strip()
-    except PermissionError:
-        return _result(check, Status.AUTH_REQUIRED, "access_control.authorization_required")
-    except OSError:
-        selinux_state = ""
-
-    if selinux_state == "1":
-        return _result(check, Status.OK, "access_control.selinux_enforcing", str(selinux_enforce))
-    if selinux_state == "0":
-        return _result(check, Status.WARNING, "access_control.selinux_permissive", str(selinux_enforce))
-
-    apparmor_enabled = APPARMOR_ENABLED
-    apparmor_profiles = APPARMOR_PROFILES
-    try:
-        enabled = apparmor_enabled.read_text(encoding="ascii").strip().upper()
-        profiles = apparmor_profiles.read_text(encoding="utf-8")
-    except PermissionError:
-        return _result(check, Status.AUTH_REQUIRED, "access_control.authorization_required")
-    except (OSError, UnicodeError):
-        return _result(
-            check,
-            Status.UNKNOWN,
-            "access_control.status_unreadable",
-        )
-
-    enforced_count = sum("(enforce)" in line for line in profiles.splitlines())
-    if enabled == "Y" and enforced_count:
-        return _result(
-            check,
-            Status.OK,
-            "access_control.apparmor_enforcing",
-            str(apparmor_profiles),
-            {"count": str(enforced_count)},
-        )
-    if enabled == "N":
-        return _result(check, Status.WARNING, "access_control.apparmor_disabled")
-    return _result(
-        check,
-        Status.UNKNOWN,
-        "access_control.apparmor_unconfirmed",
-        str(apparmor_profiles),
-    )
-
-
-def _systemd_unit_active(units: tuple[str, ...]) -> bool | None:
-    known_states = {"active", "inactive", "failed", "activating", "deactivating"}
-    found_unit = False
-
-    for unit in units:
-        command = _run_command(["systemctl", "is-active", unit])
-        if command is None:
-            return None
-        state = command.stdout.strip().lower()
-        if state == "active":
-            return True
-        if state in known_states:
-            found_unit = True
-
-    return False if found_unit else None
-
-
-def _check_ssh(check: CheckDefinition) -> CheckResult:
-    active = _systemd_unit_active(("ssh.service", "sshd.service", "ssh.socket"))
-    if active is None:
-        return _result(check, Status.UNKNOWN, "ssh.status_unavailable")
-    if active:
-        return _result(
-            check,
-            Status.WARNING,
-            "ssh.active",
-        )
-    return _result(check, Status.OK, "ssh.inactive")
-
-
-def _check_clamav(check: CheckDefinition) -> CheckResult:
-    active = _systemd_unit_active(("clamav-daemon.service",))
-    if active:
-        return _result(
-            check,
-            Status.OK,
-            "clamav.active_limited",
-        )
-    return _result(
-        check,
-        Status.UNKNOWN,
-        "clamav.not_a_universal_requirement",
-    )
+# 3. Screen lock
 
 
 def current_desktop(environment: Mapping[str, str] | None = None) -> str | None:
@@ -446,66 +378,400 @@ def current_desktop(environment: Mapping[str, str] | None = None) -> str | None:
     return None
 
 
+def _setting(arguments: list[str]) -> str | None:
+    command = _run_command(arguments)
+    if command is None or command.returncode != 0:
+        return None
+    return command.stdout.strip().lower()
+
+
+def parse_setting_number(value: str | None) -> int | None:
+    """Parse gsettings or xfconf numbers such as 'uint32 900' or '5'."""
+    if not value:
+        return None
+    try:
+        return int(value.split()[-1])
+    except ValueError:
+        return None
+
+
 def _check_screen_lock(check: CheckDefinition) -> CheckResult:
     desktop = current_desktop()
     if desktop is None:
         return _result(check, Status.UNKNOWN, "screen_lock.desktop_not_supported")
 
-    desktop_name, arguments = SCREEN_LOCK_SETTINGS[desktop]
-    data = {"desktop": desktop_name}
-    command = _run_command(arguments)
-    if command is None or command.returncode != 0:
+    settings = SCREEN_LOCK_SETTINGS[desktop]
+    data = {"desktop": settings.name}
+    lock_enabled = _setting(settings.lock_query)
+    if lock_enabled is None:
+        return _result(check, Status.UNKNOWN, "screen_lock.settings_unavailable", data=data)
+    if lock_enabled == "false":
+        return _result(check, Status.WARNING, "screen_lock.disabled", data=data)
+    if lock_enabled != "true":
+        return _result(check, Status.UNKNOWN, "screen_lock.unrecognized_result", data=data)
+
+    if settings.idle_enabled_query is not None:
+        if _setting(settings.idle_enabled_query) == "false":
+            return _result(check, Status.WARNING, "screen_lock.never_automatic", data=data)
+
+    idle_delay = parse_setting_number(_setting(settings.idle_delay_query))
+    if idle_delay is None:
+        return _result(check, Status.UNKNOWN, "screen_lock.idle_delay_unavailable", data=data)
+    if idle_delay == 0:
+        return _result(check, Status.WARNING, "screen_lock.never_automatic", data=data)
+
+    minutes = max(1, round(idle_delay * settings.idle_delay_unit_seconds / 60))
+    return _result(check, Status.OK, "screen_lock.enabled", data={**data, "minutes": str(minutes)})
+
+
+# 4. Automatic login
+
+
+def lightdm_autologin_user(config_texts: Iterable[str]) -> str:
+    """Return the effective autologin-user from LightDM files read in priority order."""
+    user = ""
+    for text in config_texts:
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        try:
+            parser.read_string(text)
+        except configparser.Error:
+            # Login Window skips files it cannot parse, and so does LightDM.
+            continue
+        for group in LIGHTDM_SEAT_GROUPS:
+            if parser.has_option(group, "autologin-user"):
+                user = parser.get(group, "autologin-user").strip()
+    return user
+
+
+def _lightdm_config_files() -> list[Path]:
+    files = []
+    for source in LIGHTDM_CONFIG_SOURCES:
+        if source.is_dir():
+            files.extend(sorted(source.glob("*.conf")))
+        elif source.is_file():
+            files.append(source)
+    return files
+
+
+def _check_auto_login(check: CheckDefinition) -> CheckResult:
+    try:
+        display_manager = Path(
+            DISPLAY_MANAGER_FILE.read_text(encoding="utf-8").strip()
+        ).name
+    except (OSError, UnicodeError):
+        return _result(check, Status.UNKNOWN, "auto_login.display_manager_unknown")
+    if display_manager != "lightdm":
         return _result(
-            check,
-            Status.UNKNOWN,
-            "screen_lock.settings_unavailable",
-            data=data,
+            check, Status.UNKNOWN, "auto_login.display_manager_not_supported",
+            data={"display_manager": display_manager[:40]},
         )
 
-    value = command.stdout.strip().lower()
-    if value == "true":
-        return _result(check, Status.OK, "screen_lock.enabled", data=data)
-    if value == "false":
-        return _result(check, Status.WARNING, "screen_lock.disabled", data=data)
-    return _result(check, Status.UNKNOWN, "screen_lock.unrecognized_result", data=data)
-
-
-def _check_bluetooth(check: CheckDefinition) -> CheckResult:
-    rfkill_directory = RFKILL_DIRECTORY
     try:
-        devices = list(rfkill_directory.glob("rfkill*"))
-    except OSError:
-        return _result(check, Status.UNKNOWN, "bluetooth.status_unavailable")
+        texts = [path.read_text(encoding="utf-8") for path in _lightdm_config_files()]
+    except (OSError, UnicodeError):
+        return _result(check, Status.UNKNOWN, "auto_login.settings_unreadable")
 
-    bluetooth_devices: list[tuple[bool, bool]] = []
-    for device in devices:
+    # The user name is personal data, so it is never part of the result.
+    if lightdm_autologin_user(texts):
+        return _result(check, Status.WARNING, "auto_login.enabled")
+    return _result(check, Status.OK, "auto_login.disabled")
+
+
+# 5. Timeshift
+
+
+@dataclass(frozen=True)
+class TimeshiftSettings:
+    configured: bool
+    btrfs_mode: bool
+    schedules: tuple[str, ...]
+    backup_device_uuid: str
+
+
+def parse_timeshift_settings(contents: str) -> TimeshiftSettings | None:
+    """Parse the Timeshift settings that tell where and when snapshots are made."""
+    try:
+        settings = json.loads(contents)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(settings, dict):
+        return None
+
+    backup_device_uuid = settings.get("backup_device_uuid", "")
+    if not isinstance(backup_device_uuid, str):
+        return None
+
+    def enabled(key: str) -> bool:
+        # Timeshift stores booleans as the strings "true" and "false".
+        return str(settings.get(key, "")).lower() == "true"
+
+    return TimeshiftSettings(
+        configured=bool(backup_device_uuid.strip()) and not enabled("do_first_run"),
+        btrfs_mode=enabled("btrfs_mode"),
+        schedules=tuple(name for name in TIMESHIFT_SCHEDULES if enabled(f"schedule_{name}")),
+        backup_device_uuid=backup_device_uuid.strip(),
+    )
+
+
+def timeshift_age_limit_days(schedules: Sequence[str]) -> float:
+    """Allow twice the most frequent schedule, within fixed bounds."""
+    intervals = [TIMESHIFT_SCHEDULE_DAYS[name] for name in schedules if name in TIMESHIFT_SCHEDULE_DAYS]
+    if not intervals:
+        return TIMESHIFT_MAX_AGE_LIMIT_DAYS
+    return min(
+        max(2 * min(intervals), TIMESHIFT_MIN_AGE_LIMIT_DAYS),
+        TIMESHIFT_MAX_AGE_LIMIT_DAYS,
+    )
+
+
+def newest_snapshot_time(names: Iterable[str]) -> datetime | None:
+    """Return the newest time among snapshot folder names like 2026-10-02_22-07-41."""
+    times = []
+    for name in names:
         try:
-            device_type = (device / "type").read_text(encoding="ascii").strip()
-            if device_type != "bluetooth":
+            times.append(datetime.strptime(name, "%Y-%m-%d_%H-%M-%S"))
+        except ValueError:
+            continue
+    return max(times, default=None)
+
+
+def _root_filesystem_uuid() -> str | None:
+    command = _run_command(["findmnt", "--noheadings", "--output", "UUID", "--target", "/"])
+    if command is None or command.returncode != 0:
+        return None
+    return command.stdout.strip() or None
+
+
+def _check_timeshift(check: CheckDefinition) -> CheckResult:
+    try:
+        settings = parse_timeshift_settings(TIMESHIFT_CONFIG.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if TIMESHIFT_EXECUTABLE.is_file():
+            return _result(check, Status.WARNING, "timeshift.not_set_up")
+        return _result(check, Status.UNKNOWN, "timeshift.not_installed")
+    except (OSError, UnicodeError):
+        settings = None
+    if settings is None:
+        return _result(check, Status.UNKNOWN, "timeshift.settings_unreadable", str(TIMESHIFT_CONFIG))
+
+    if not settings.configured:
+        return _result(check, Status.WARNING, "timeshift.not_set_up", str(TIMESHIFT_CONFIG))
+    if settings.btrfs_mode:
+        # Btrfs snapshots are only mounted while Timeshift runs.
+        return _result(check, Status.UNKNOWN, "timeshift.btrfs_mode", str(TIMESHIFT_CONFIG))
+    root_uuid = _root_filesystem_uuid()
+    if root_uuid is not None and root_uuid != settings.backup_device_uuid:
+        return _result(check, Status.UNKNOWN, "timeshift.separate_device", str(TIMESHIFT_CONFIG))
+
+    try:
+        names = [path.name for path in TIMESHIFT_SNAPSHOTS.iterdir() if path.is_dir()]
+    except FileNotFoundError:
+        names = []
+    except OSError:
+        return _result(check, Status.UNKNOWN, "timeshift.snapshots_unreadable", str(TIMESHIFT_SNAPSHOTS))
+
+    newest = newest_snapshot_time(names)
+    if newest is None:
+        return _result(check, Status.WARNING, "timeshift.no_snapshots", str(TIMESHIFT_SNAPSHOTS))
+
+    age_days = _days_since(newest)
+    limit_days = timeshift_age_limit_days(settings.schedules)
+    data = {"days": str(int(age_days)), "limit": str(int(limit_days))}
+    if age_days <= limit_days:
+        return _result(check, Status.OK, "timeshift.recent_snapshot", str(TIMESHIFT_SNAPSHOTS), data)
+    return _result(check, Status.WARNING, "timeshift.snapshot_too_old", str(TIMESHIFT_SNAPSHOTS), data)
+
+
+# 6. Network services
+
+
+def _proc_net_address(hex_address: str, ipv6: bool) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    raw = bytes.fromhex(hex_address)
+    # The kernel prints each 32-bit word in host (little-endian) byte order.
+    words = b"".join(raw[index:index + 4][::-1] for index in range(0, len(raw), 4))
+    return ipaddress.IPv6Address(words) if ipv6 else ipaddress.IPv4Address(words)
+
+
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def listening_sockets(proc_net_text: str, ipv6: bool) -> set[tuple[IPAddress, int]]:
+    """Return non-loopback (address, port) pairs of TCP sockets in the listening state."""
+    sockets = set()
+    for line in proc_net_text.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 4 or fields[3] != TCP_LISTEN_STATE:
+            continue
+        hex_address, _, hex_port = fields[1].partition(":")
+        try:
+            address = _proc_net_address(hex_address, ipv6)
+            port = int(hex_port, 16)
+        except ValueError:
+            continue
+        mapped = getattr(address, "ipv4_mapped", None)
+        if address.is_loopback or (mapped is not None and mapped.is_loopback):
+            continue
+        sockets.add((address, port))
+    return sockets
+
+
+def _is_internal_bridge(name: str) -> bool:
+    """Return whether an interface is a bridge whose ports are all virtual, like virbr0."""
+    if not re.fullmatch(r"[\w.@-]{1,32}", name):
+        return False
+    bridge = SYS_CLASS_NET / name
+    if not (bridge / "bridge").is_dir():
+        return False
+    try:
+        ports = list((bridge / "brif").iterdir())
+    except OSError:
+        return False
+    # A port with a device link is a real network card, reachable from other computers.
+    return not any((SYS_CLASS_NET / port.name / "device").exists() for port in ports)
+
+
+def parse_interface_addresses(ip_json: str) -> dict[str, set[IPAddress]]:
+    """Parse `ip -json address show` into addresses per interface name."""
+    try:
+        interfaces = json.loads(ip_json)
+    except json.JSONDecodeError:
+        return {}
+    addresses: dict[str, set[IPAddress]] = {}
+    for interface in interfaces if isinstance(interfaces, list) else ():
+        name = interface.get("ifname") if isinstance(interface, dict) else None
+        if not isinstance(name, str):
+            continue
+        for info in interface.get("addr_info", ()):
+            try:
+                addresses.setdefault(name, set()).add(ipaddress.ip_address(info.get("local", "")))
+            except (AttributeError, ValueError):
                 continue
-            soft_blocked = (device / "soft").read_text(encoding="ascii").strip() == "1"
-            hard_blocked = (device / "hard").read_text(encoding="ascii").strip() == "1"
-            bluetooth_devices.append((soft_blocked, hard_blocked))
+    return addresses
+
+
+def _internal_bridge_addresses() -> set[IPAddress]:
+    command = _run_command(["ip", "-json", "address", "show"])
+    if command is None or command.returncode != 0:
+        return set()
+    return {
+        address
+        for name, addresses in parse_interface_addresses(command.stdout).items()
+        if _is_internal_bridge(name)
+        for address in addresses
+    }
+
+
+def _ssh_config_lines(path: Path, depth: int = 0) -> list[str]:
+    lines = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        include = re.match(r"(?i)^include\s+(.+)$", stripped)
+        if include is None:
+            lines.append(stripped)
+            continue
+        if depth >= 3:
+            continue
+        for pattern in include.group(1).split():
+            if not pattern.startswith("/"):
+                pattern = str(SSH_CONFIG.parent / pattern)
+            for included in sorted(glob.glob(pattern)):
+                lines.extend(_ssh_config_lines(Path(included), depth + 1))
+    return lines
+
+
+def ssh_allows_password_or_root_login(lines: Iterable[str]) -> bool:
+    """Apply sshd's first-value-wins rule to the global login options."""
+    values: dict[str, str] = {}
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        parts = re.split(r"[\s=]+", line, maxsplit=1)
+        key = parts[0].lower()
+        if key == "match":
+            break
+        if len(parts) == 2 and key not in values:
+            values[key] = parts[1].strip().lower()
+
+    password = values.get("passwordauthentication", "yes") == "yes"
+    keyboard_interactive = values.get("kbdinteractiveauthentication", "yes") == "yes"
+    root = values.get("permitrootlogin", "prohibit-password") == "yes"
+    return password or keyboard_interactive or root
+
+
+def _check_network_services(check: CheckDefinition) -> CheckResult:
+    sockets: set[tuple[IPAddress, int]] = set()
+    readable = False
+    for path, ipv6 in PROC_NET_TCP:
+        try:
+            sockets |= listening_sockets(path.read_text(encoding="ascii"), ipv6)
+            readable = True
+        except FileNotFoundError:
+            continue
         except (OSError, UnicodeError):
-            return _result(check, Status.UNKNOWN, "bluetooth.device_unreadable")
+            return _result(check, Status.UNKNOWN, "network_services.status_unreadable")
+    if not readable:
+        return _result(check, Status.UNKNOWN, "network_services.status_unreadable")
 
-    if not bluetooth_devices:
-        return _result(check, Status.UNKNOWN, "bluetooth.no_radio_found")
-    if all(soft or hard for soft, hard in bluetooth_devices):
-        return _result(check, Status.OK, "bluetooth.all_radios_blocked")
-    return _result(
-        check,
-        Status.UNKNOWN,
-        "bluetooth.unblocked_is_not_proof_of_risk",
-    )
+    # Services only on internal bridges are reachable from local virtual machines, not other computers.
+    internal = _internal_bridge_addresses() if sockets else set()
+    ports = {port for address, port in sockets if address not in internal}
+    if not ports:
+        return _result(check, Status.OK, "network_services.none")
+
+    evidence = "TCP " + ", ".join(str(port) for port in sorted(ports))
+    remote_desktop = sorted(ports & REMOTE_DESKTOP_PORTS)
+    if remote_desktop:
+        return _result(
+            check, Status.WARNING, "network_services.remote_desktop", evidence,
+            {"ports": ", ".join(str(port) for port in remote_desktop)},
+        )
+
+    if SSH_PORT in ports:
+        try:
+            risky = ssh_allows_password_or_root_login(_ssh_config_lines(SSH_CONFIG))
+        except (OSError, UnicodeError):
+            return _result(check, Status.UNKNOWN, "network_services.ssh_settings_unreadable", evidence)
+        if risky:
+            return _result(check, Status.WARNING, "network_services.ssh_password_login", evidence)
+
+    other_ports = sorted(ports - {SSH_PORT})
+    if other_ports:
+        return _result(
+            check, Status.UNKNOWN, "network_services.other_ports", evidence,
+            {"ports": ", ".join(str(port) for port in other_ports[:20])},
+        )
+    return _result(check, Status.OK, "network_services.ssh_key_only", evidence)
 
 
-def _check_root_shell(check: CheckDefinition) -> CheckResult:
-    return _result(
-        check,
-        Status.UNKNOWN,
-        "root_shell.check_not_implemented",
-    )
+# 7. AppArmor
+
+
+def _check_apparmor(check: CheckDefinition) -> CheckResult:
+    try:
+        enabled = APPARMOR_ENABLED.read_text(encoding="ascii").strip().upper()
+    except FileNotFoundError:
+        return _result(check, Status.UNKNOWN, "apparmor.not_available")
+    except (OSError, UnicodeError):
+        return _result(check, Status.UNKNOWN, "apparmor.status_unreadable")
+
+    if enabled == "Y":
+        return _result(check, Status.OK, "apparmor.enabled", str(APPARMOR_ENABLED))
+    if enabled == "N":
+        return _result(check, Status.WARNING, "apparmor.disabled", str(APPARMOR_ENABLED))
+    return _result(check, Status.UNKNOWN, "apparmor.unrecognized_status")
+
+
+# 8. Disk encryption
+
+
+def parse_findmnt_pairs(output: str) -> dict[str, str]:
+    """Parse one line of `findmnt --pairs` output."""
+    return dict(re.findall(r'([A-Z]+)="([^"]*)"', output))
+
+
+def block_device_from_mount_source(source: str) -> str:
+    """Drop the btrfs subvolume suffix, as in /dev/sda2[/@home]."""
+    return re.sub(r"\[[^\]]*\]$", "", source)
 
 
 @dataclass(frozen=True)
@@ -536,51 +802,53 @@ def _mount_encryption(target: str) -> MountEncryption:
     return MountEncryption("crypt" in types, source, filesystem_type)
 
 
-def _check_full_disk_encryption(check: CheckDefinition) -> CheckResult:
-    mount = _mount_encryption("/")
-    encrypted, source = mount.crypt_mapping, mount.source
-    if encrypted is None:
-        return _result(check, Status.UNKNOWN, "encryption.root_status_unknown", source)
-    if encrypted:
-        return _result(check, Status.OK, "encryption.root_crypt_mapping", source)
-    return _result(
-        check,
-        Status.WARNING,
-        "encryption.root_crypt_mapping_not_found",
-        source,
-    )
+def _is_portable_computer() -> bool:
+    try:
+        return int(CHASSIS_TYPE.read_text(encoding="ascii").strip()) in PORTABLE_CHASSIS_TYPES
+    except (OSError, UnicodeError, ValueError):
+        return False
 
 
-def _check_home_encryption(check: CheckDefinition) -> CheckResult:
+def _check_disk_encryption(check: CheckDefinition) -> CheckResult:
+    system = _mount_encryption("/")
+    if system.crypt_mapping:
+        return _result(check, Status.OK, "disk_encryption.system_encrypted", system.source)
+
     # The home path is not used as evidence because it contains the user name.
-    mount = _mount_encryption(str(Path.home()))
-    encrypted, source = mount.crypt_mapping, mount.source
-    if mount.filesystem_type == "ecryptfs":
-        return _result(check, Status.OK, "encryption.home_ecryptfs", "ecryptfs")
-    if encrypted is None:
-        return _result(check, Status.UNKNOWN, "encryption.home_status_unknown", source)
-    if encrypted:
-        return _result(check, Status.OK, "encryption.home_crypt_mapping", source)
-    return _result(
-        check,
-        Status.WARNING,
-        "encryption.home_crypt_mapping_not_found",
-        source,
+    home = _mount_encryption(str(Path.home()))
+    if home.filesystem_type == "ecryptfs":
+        return _result(check, Status.OK, "disk_encryption.home_only", "ecryptfs")
+    if home.crypt_mapping:
+        return _result(check, Status.OK, "disk_encryption.home_only", home.source)
+
+    if system.crypt_mapping is None or home.crypt_mapping is None:
+        return _result(check, Status.UNKNOWN, "disk_encryption.status_unknown")
+    message_id = (
+        "disk_encryption.not_encrypted_portable"
+        if _is_portable_computer()
+        else "disk_encryption.not_encrypted"
     )
+    return _result(check, Status.WARNING, message_id, system.source)
+
+
+# 9. Boot menu protection
+
+
+def _check_boot_menu(check: CheckDefinition) -> CheckResult:
+    # See docs/root-shell-check-proposal.md; this stays undecided until it is approved.
+    return _result(check, Status.UNKNOWN, "boot_menu.check_not_defined")
 
 
 CHECKS = (
     CheckDefinition("firewall", 1, _check_firewall),
-    CheckDefinition("updates", 1, _check_automatic_updates),
-    CheckDefinition("timeshift", 1, _check_timeshift),
-    CheckDefinition("access-control", 1, _check_access_control),
-    CheckDefinition("ssh", 1, _check_ssh),
-    CheckDefinition("clamav", 1, _check_clamav),
+    CheckDefinition("updates", 1, _check_updates),
     CheckDefinition("screen-lock", 1, _check_screen_lock),
-    CheckDefinition("bluetooth", 1, _check_bluetooth),
-    CheckDefinition("root-shell", 2, _check_root_shell),
-    CheckDefinition("full-disk-encryption", 2, _check_full_disk_encryption),
-    CheckDefinition("home-encryption", 2, _check_home_encryption),
+    CheckDefinition("auto-login", 1, _check_auto_login),
+    CheckDefinition("timeshift", 1, _check_timeshift),
+    CheckDefinition("network-services", 1, _check_network_services),
+    CheckDefinition("apparmor", 1, _check_apparmor),
+    CheckDefinition("disk-encryption", 2, _check_disk_encryption),
+    CheckDefinition("boot-menu", 2, _check_boot_menu),
 )
 
 
@@ -603,7 +871,7 @@ def run_checks() -> tuple[CheckResult, ...]:
     return tuple(results)
 
 
-PRIVILEGED_CHECK_IDS = frozenset({"firewall", "timeshift", "access-control"})
+PRIVILEGED_CHECK_IDS = frozenset({"firewall"})
 PRIVILEGED_HELPER_PATH = Path("/usr/libexec/mojitoshield/privileged-check")
 PRIVILEGED_POLICY_PATH = Path(
     "/usr/share/polkit-1/actions/org.mojitoshield.privileged-check.policy"

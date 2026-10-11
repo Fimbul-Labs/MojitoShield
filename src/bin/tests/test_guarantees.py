@@ -14,8 +14,8 @@ ANALYSIS_SOURCES = ("mojitoshield_core.py", "mojitoshield_privileged.py")
 ALL_SOURCES = (*ANALYSIS_SOURCES, "mojitoshield.py", "mojitoshield_i18n.py")
 SYSTEMD_UNIT_SUFFIXES = (".service", ".socket", ".timer")
 MESSAGE_PREFIXES = (
-    "firewall", "updates", "timeshift", "access_control", "ssh", "clamav",
-    "screen_lock", "bluetooth", "root_shell", "encryption", "check",
+    "firewall", "updates", "screen_lock", "auto_login", "timeshift",
+    "network_services", "apparmor", "disk_encryption", "boot_menu", "check",
 )
 
 
@@ -133,8 +133,14 @@ class OfflineAndReadOnlyTests(unittest.TestCase):
             ("findmnt", None),
             ("lsblk", None),
             ("xfconf-query", None),
+            ("ip", "-json"),
         }
-        commands = [arguments for _name, arguments in SCREEN_LOCK_SETTINGS.values()]
+        commands = [
+            query
+            for settings in SCREEN_LOCK_SETTINGS.values()
+            for query in (settings.lock_query, settings.idle_delay_query, settings.idle_enabled_query)
+            if query is not None
+        ]
         for node in ast.walk(ast.parse(source("mojitoshield_core.py"))):
             if (
                 isinstance(node, ast.Call)
