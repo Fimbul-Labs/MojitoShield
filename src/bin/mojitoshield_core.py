@@ -18,6 +18,34 @@ from typing import Callable, Mapping, Sequence
 
 LOGGER = logging.getLogger(__name__)
 
+APT_AUTO_UPGRADES = Path("/etc/apt/apt.conf.d/20auto-upgrades")
+MINTUPDATE_AUTOMATION_SCRIPT = Path("/usr/lib/linuxmint/mintUpdate/automatic_upgrades.py")
+MINTUPDATE_UPGRADE_FLAG = Path("/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled")
+MINTUPDATE_UPGRADE_TIMER = "mintupdate-automation-upgrade.timer"
+TIMESHIFT_CONFIG = Path("/etc/timeshift/timeshift.json")
+TIMESHIFT_SNAPSHOTS = Path("/timeshift/snapshots")
+TIMESHIFT_SCHEDULES = ("monthly", "weekly", "daily", "hourly", "boot")
+SELINUX_ENFORCE = Path("/sys/fs/selinux/enforce")
+APPARMOR_ENABLED = Path("/sys/module/apparmor/parameters/enabled")
+APPARMOR_PROFILES = Path("/sys/kernel/security/apparmor/profiles")
+RFKILL_DIRECTORY = Path("/sys/class/rfkill")
+
+# Desktop name shown to the user, and the read-only query for its lock setting.
+SCREEN_LOCK_SETTINGS = {
+    "cinnamon": (
+        "Cinnamon",
+        ["gsettings", "get", "org.cinnamon.desktop.screensaver", "lock-enabled"],
+    ),
+    "mate": (
+        "MATE",
+        ["gsettings", "get", "org.mate.screensaver", "lock-enabled"],
+    ),
+    "xfce": (
+        "Xfce",
+        ["xfconf-query", "--channel", "xfce4-screensaver", "--property", "/lock/enabled"],
+    ),
+}
+
 
 class Status(str, Enum):
     OK = "ok"
@@ -89,6 +117,49 @@ def parse_apt_auto_updates(contents: str) -> bool | None:
     return all(keys.values())
 
 
+@dataclass(frozen=True)
+class TimeshiftSettings:
+    configured: bool
+    btrfs_mode: bool
+    scheduled: bool
+    backup_device_uuid: str
+
+
+def parse_timeshift_settings(contents: str) -> TimeshiftSettings | None:
+    """Parse the Timeshift settings that tell where and when snapshots are made."""
+    try:
+        settings = json.loads(contents)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(settings, dict):
+        return None
+
+    backup_device_uuid = settings.get("backup_device_uuid", "")
+    if not isinstance(backup_device_uuid, str):
+        return None
+
+    def enabled(key: str) -> bool:
+        # Timeshift stores booleans as the strings "true" and "false".
+        return str(settings.get(key, "")).lower() == "true"
+
+    return TimeshiftSettings(
+        configured=bool(backup_device_uuid.strip()) and not enabled("do_first_run"),
+        btrfs_mode=enabled("btrfs_mode"),
+        scheduled=any(enabled(f"schedule_{name}") for name in TIMESHIFT_SCHEDULES),
+        backup_device_uuid=backup_device_uuid.strip(),
+    )
+
+
+def parse_findmnt_pairs(output: str) -> dict[str, str]:
+    """Parse one line of `findmnt --pairs` output."""
+    return dict(re.findall(r'([A-Z]+)="([^"]*)"', output))
+
+
+def block_device_from_mount_source(source: str) -> str:
+    """Drop the btrfs subvolume suffix, as in /dev/sda2[/@home]."""
+    return re.sub(r"\[[^\]]*\]$", "", source)
+
+
 def _result(
     check: CheckDefinition,
     status: Status,
@@ -148,8 +219,41 @@ def _check_firewall(check: CheckDefinition) -> CheckResult:
     return _result(check, Status.UNKNOWN, "firewall.unrecognized_status")
 
 
+def _mintupdate_automation_enabled() -> bool | None:
+    """Return whether Update Manager's automatic upgrades run, or None if unknown."""
+    if not MINTUPDATE_AUTOMATION_SCRIPT.is_file():
+        return None
+    try:
+        flag_present = MINTUPDATE_UPGRADE_FLAG.exists()
+    except OSError:
+        return None
+    command = _run_command(["systemctl", "is-enabled", MINTUPDATE_UPGRADE_TIMER])
+    if command is None:
+        return None
+
+    # The timer starts the upgrade script, and the script exits unless the flag exists.
+    return flag_present and command.stdout.strip() == "enabled"
+
+
 def _check_automatic_updates(check: CheckDefinition) -> CheckResult:
-    settings_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
+    apt_result = _check_apt_auto_updates(check)
+    if apt_result.status is Status.OK:
+        return apt_result
+
+    mintupdate_enabled = _mintupdate_automation_enabled()
+    if mintupdate_enabled is None:
+        return apt_result
+    if mintupdate_enabled:
+        return _result(
+            check, Status.OK, "updates.mintupdate_automation_enabled", MINTUPDATE_UPGRADE_TIMER
+        )
+    return _result(
+        check, Status.WARNING, "updates.mintupdate_automation_disabled", MINTUPDATE_UPGRADE_TIMER
+    )
+
+
+def _check_apt_auto_updates(check: CheckDefinition) -> CheckResult:
+    settings_file = APT_AUTO_UPGRADES
     try:
         contents = settings_file.read_text(encoding="utf-8")
     except PermissionError:
@@ -180,8 +284,37 @@ def _check_automatic_updates(check: CheckDefinition) -> CheckResult:
     )
 
 
+def _read_timeshift_settings() -> TimeshiftSettings | None:
+    try:
+        contents = TIMESHIFT_CONFIG.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    return parse_timeshift_settings(contents)
+
+
+def _root_filesystem_uuid() -> str | None:
+    command = _run_command(["findmnt", "--noheadings", "--output", "UUID", "--target", "/"])
+    if command is None or command.returncode != 0:
+        return None
+    return command.stdout.strip() or None
+
+
 def _check_timeshift(check: CheckDefinition) -> CheckResult:
-    snapshots = Path("/timeshift/snapshots")
+    settings = _read_timeshift_settings()
+    if settings is not None:
+        config = str(TIMESHIFT_CONFIG)
+        if not settings.configured:
+            return _result(check, Status.UNKNOWN, "timeshift.not_configured", config)
+        if not settings.scheduled:
+            return _result(check, Status.UNKNOWN, "timeshift.configured_without_schedule", config)
+        if settings.btrfs_mode:
+            # Btrfs snapshots are only mounted while Timeshift runs, so they are not counted.
+            return _result(check, Status.UNKNOWN, "timeshift.btrfs_scheduled", config)
+        root_uuid = _root_filesystem_uuid()
+        if root_uuid is not None and root_uuid != settings.backup_device_uuid:
+            return _result(check, Status.UNKNOWN, "timeshift.scheduled_on_separate_device", config)
+
+    snapshots = TIMESHIFT_SNAPSHOTS
     try:
         snapshot_count = sum(path.is_dir() for path in snapshots.iterdir())
     except PermissionError:
@@ -211,7 +344,7 @@ def _check_timeshift(check: CheckDefinition) -> CheckResult:
 
 
 def _check_access_control(check: CheckDefinition) -> CheckResult:
-    selinux_enforce = Path("/sys/fs/selinux/enforce")
+    selinux_enforce = SELINUX_ENFORCE
     try:
         selinux_state = selinux_enforce.read_text(encoding="ascii").strip()
     except PermissionError:
@@ -224,8 +357,8 @@ def _check_access_control(check: CheckDefinition) -> CheckResult:
     if selinux_state == "0":
         return _result(check, Status.WARNING, "access_control.selinux_permissive", str(selinux_enforce))
 
-    apparmor_enabled = Path("/sys/module/apparmor/parameters/enabled")
-    apparmor_profiles = Path("/sys/kernel/security/apparmor/profiles")
+    apparmor_enabled = APPARMOR_ENABLED
+    apparmor_profiles = APPARMOR_PROFILES
     try:
         enabled = apparmor_enabled.read_text(encoding="ascii").strip().upper()
         profiles = apparmor_profiles.read_text(encoding="utf-8")
@@ -302,27 +435,43 @@ def _check_clamav(check: CheckDefinition) -> CheckResult:
     )
 
 
+def current_desktop(environment: Mapping[str, str] | None = None) -> str | None:
+    """Return the supported Mint desktop named by XDG_CURRENT_DESKTOP."""
+    if environment is None:
+        environment = os.environ
+    desktops = environment.get("XDG_CURRENT_DESKTOP", "").lower().split(":")
+    for desktop in SCREEN_LOCK_SETTINGS:
+        if desktop in desktops or f"x-{desktop}" in desktops:
+            return desktop
+    return None
+
+
 def _check_screen_lock(check: CheckDefinition) -> CheckResult:
-    command = _run_command(
-        ["gsettings", "get", "org.cinnamon.desktop.screensaver", "lock-enabled"]
-    )
+    desktop = current_desktop()
+    if desktop is None:
+        return _result(check, Status.UNKNOWN, "screen_lock.desktop_not_supported")
+
+    desktop_name, arguments = SCREEN_LOCK_SETTINGS[desktop]
+    data = {"desktop": desktop_name}
+    command = _run_command(arguments)
     if command is None or command.returncode != 0:
         return _result(
             check,
             Status.UNKNOWN,
             "screen_lock.settings_unavailable",
+            data=data,
         )
 
     value = command.stdout.strip().lower()
     if value == "true":
-        return _result(check, Status.OK, "screen_lock.enabled")
+        return _result(check, Status.OK, "screen_lock.enabled", data=data)
     if value == "false":
-        return _result(check, Status.WARNING, "screen_lock.disabled")
-    return _result(check, Status.UNKNOWN, "screen_lock.unrecognized_result")
+        return _result(check, Status.WARNING, "screen_lock.disabled", data=data)
+    return _result(check, Status.UNKNOWN, "screen_lock.unrecognized_result", data=data)
 
 
 def _check_bluetooth(check: CheckDefinition) -> CheckResult:
-    rfkill_directory = Path("/sys/class/rfkill")
+    rfkill_directory = RFKILL_DIRECTORY
     try:
         devices = list(rfkill_directory.glob("rfkill*"))
     except OSError:
@@ -359,26 +508,37 @@ def _check_root_shell(check: CheckDefinition) -> CheckResult:
     )
 
 
-def _encrypted_mount(mountpoint: str) -> tuple[bool | None, str]:
-    mount = _run_command(
-        ["findmnt", "--target", mountpoint, "--noheadings", "--output", "SOURCE"]
-    )
-    if mount is None or mount.returncode != 0 or not mount.stdout.strip():
-        return None, "mount_source_unreadable"
+@dataclass(frozen=True)
+class MountEncryption:
+    crypt_mapping: bool | None
+    source: str
+    filesystem_type: str = ""
 
-    source = mount.stdout.strip()
+
+def _mount_encryption(target: str) -> MountEncryption:
+    mount = _run_command(
+        ["findmnt", "--target", target, "--noheadings", "--pairs", "--output", "SOURCE,FSTYPE"]
+    )
+    fields = parse_findmnt_pairs(mount.stdout) if mount and mount.returncode == 0 else {}
+    source = fields.get("SOURCE", "")
+    filesystem_type = fields.get("FSTYPE", "").lower()
+    if not source:
+        return MountEncryption(None, "mount_source_unreadable")
+
+    device = block_device_from_mount_source(source)
     block_types = _run_command(
-        ["lsblk", "--inverse", "--noheadings", "--output", "TYPE", source]
+        ["lsblk", "--inverse", "--noheadings", "--output", "TYPE", device]
     )
     if block_types is None or block_types.returncode != 0:
-        return None, source
+        return MountEncryption(None, source, filesystem_type)
 
     types = {line.strip().lower() for line in block_types.stdout.splitlines()}
-    return "crypt" in types, source
+    return MountEncryption("crypt" in types, source, filesystem_type)
 
 
 def _check_full_disk_encryption(check: CheckDefinition) -> CheckResult:
-    encrypted, source = _encrypted_mount("/")
+    mount = _mount_encryption("/")
+    encrypted, source = mount.crypt_mapping, mount.source
     if encrypted is None:
         return _result(check, Status.UNKNOWN, "encryption.root_status_unknown", source)
     if encrypted:
@@ -392,7 +552,11 @@ def _check_full_disk_encryption(check: CheckDefinition) -> CheckResult:
 
 
 def _check_home_encryption(check: CheckDefinition) -> CheckResult:
-    encrypted, source = _encrypted_mount("/home")
+    # The home path is not used as evidence because it contains the user name.
+    mount = _mount_encryption(str(Path.home()))
+    encrypted, source = mount.crypt_mapping, mount.source
+    if mount.filesystem_type == "ecryptfs":
+        return _result(check, Status.OK, "encryption.home_ecryptfs", "ecryptfs")
     if encrypted is None:
         return _result(check, Status.UNKNOWN, "encryption.home_status_unknown", source)
     if encrypted:
