@@ -1,3 +1,9 @@
+mojitoshield (0.1.2) unstable; urgency=low
+
+  * Check boot menu protection: disk encryption or an active GRUB password.
+
+ -- MojitoShield contributors <maintainers@mojitoshield.invalid>  Sun, 11 Oct 2026 20:37:47 +0200
+
 mojitoshield (0.1.1) unstable; urgency=low
 
   * Revise to 9 checks with documented contracts.

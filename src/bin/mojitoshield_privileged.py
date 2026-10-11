@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Callable
 
 
 UFW_EXECUTABLE = Path("/usr/sbin/ufw")
+GRUB_CONFIGS = (Path("/boot/grub/grub.cfg"), Path("/boot/grub/custom.cfg"))
 
 
 def _firewall() -> dict[str, object]:
@@ -69,8 +71,37 @@ def _firewall() -> dict[str, object]:
     }
 
 
+def _grub_password_configured(text: str) -> bool:
+    # Same rule as mojitoshield_core.grub_password_configured; the helper imports nothing from the app.
+    lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
+    superusers = any(
+        re.match(r"""^set\s+superusers\s*=\s*["']?[^"'\s]+""", line) for line in lines
+    )
+    password = any(re.match(r"^password(_pbkdf2)?\s+\S+\s+\S+", line) for line in lines)
+    return superusers and password
+
+
+def _boot_menu() -> dict[str, object]:
+    texts = []
+    for path in GRUB_CONFIGS:
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return {"check_id": "boot-menu", "status": "unknown", "message_id": "boot_menu.config_unreadable"}
+
+    if not texts:
+        return {"check_id": "boot-menu", "status": "unknown", "message_id": "boot_menu.grub_not_used"}
+    # Only the conclusion leaves the helper, never lines from the boot configuration.
+    if _grub_password_configured("\n".join(texts)):
+        return {"check_id": "boot-menu", "status": "ok", "message_id": "boot_menu.password_active"}
+    return {"check_id": "boot-menu", "status": "warning", "message_id": "boot_menu.password_not_active"}
+
+
 CHECKS: dict[str, Callable[[], dict[str, object]]] = {
     "firewall": _firewall,
+    "boot-menu": _boot_menu,
 }
 
 

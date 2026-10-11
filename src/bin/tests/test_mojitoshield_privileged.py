@@ -2,6 +2,7 @@ import json
 import os
 import stat
 import subprocess
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -142,6 +143,34 @@ class PrivilegedHelperTests(unittest.TestCase):
         )
         self.assertNotIn("shell", run.call_args.kwargs)
         self.assertEqual(result.message_id, "firewall.active")
+
+    def test_helper_and_app_agree_on_grub_passwords(self):
+        from mojitoshield_core import grub_password_configured
+
+        samples = (
+            'set superusers="admin"\npassword_pbkdf2 admin grub.pbkdf2.sha512.10000.ABC',
+            "set superusers=admin\npassword admin secret",
+            '# set superusers="admin"\n# password_pbkdf2 admin x',
+            'set superusers=""\npassword_pbkdf2 admin x',
+            'set superusers="admin"',
+            "",
+        )
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertEqual(helper._grub_password_configured(sample), grub_password_configured(sample))
+
+    def test_boot_menu_helper_returns_only_a_conclusion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            grub_config = Path(directory) / "grub.cfg"
+            grub_config.write_text('set superusers="admin"\npassword_pbkdf2 admin grub.pbkdf2.SECRET\n')
+            with patch.object(helper, "GRUB_CONFIGS", (grub_config, Path(directory) / "custom.cfg")):
+                result = helper._boot_menu()
+                grub_config.write_text("menuentry 'Linux Mint' {}\n")
+                missing = helper._boot_menu()
+
+        self.assertEqual(result, {"check_id": "boot-menu", "status": "ok", "message_id": "boot_menu.password_active"})
+        self.assertNotIn("SECRET", json.dumps(result))
+        self.assertEqual(missing["message_id"], "boot_menu.password_not_active")
 
     def test_dismissed_authorization_dialog_is_reported_as_cancelled(self):
         process = subprocess.CompletedProcess([], 126, "", "")

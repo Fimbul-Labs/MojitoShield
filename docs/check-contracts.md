@@ -121,5 +121,18 @@ Statuses: **OK**, **Warning**, **Could not determine**, **Requires extended perm
 
 ### 9. Boot menu protection (`boot-menu`)
 
-- **Question:** Can someone get administrator access from the boot menu without a password?
-- **Result:** always **Could not determine** for now. The contract is proposed in `docs/root-shell-check-proposal.md` and waits for decisions.
+- **Question:** Can someone at the computer during startup change the boot options to get administrator access, without a password?
+- **Reads:**
+  - Whether the root filesystem is behind a crypt mapping (as in *Disk encryption*).
+  - Whether GRUB is the boot menu: `/boot/grub/grub.cfg` exists. Its contents are root-only, but its modification time is readable.
+  - GRUB password settings (`set superusers=` together with a `password` or `password_pbkdf2` line) in the executable scripts in `/etc/grub.d` (world-readable) and in `/boot/grub/custom.cfg`, which GRUB reads directly at boot. Comment lines are ignored, and non-executable scripts are ignored because `update-grub` skips them.
+- **Result:**
+  - The system disk is encrypted → **OK**. Changing boot options gives nothing without the encryption passphrase.
+  - A password is set in `custom.cfg` → **OK**.
+  - A password is set in `/etc/grub.d`, and `grub.cfg` was generated after those scripts were last changed → **OK**.
+  - A password is set in `/etc/grub.d`, but `grub.cfg` is older → **Requires extended permission**. The extended scan reads `grub.cfg`: password present → **OK**; missing → **Warning** with the next step `sudo update-grub`.
+  - No password and no encryption → **Warning**. Next step: disk encryption at the next installation; a boot-menu password is an advanced alternative, and a mistake can stop the computer from starting, so ask on the Linux Mint forums first. On unencrypted computers this is a second Warning next to *Disk encryption*; that was a deliberate decision (2026-10-11).
+  - GRUB is not used → **Could not determine**.
+  - Encryption state unknown and no password, or files unreadable → **Could not determine**.
+- **Cannot conclude:** firmware (BIOS/UEFI) passwords, Secure Boot or boot order. Whether boot entries are marked `--unrestricted` is not checked; that only affects starting an entry, not changing its options.
+- **Not checked (decided 2026-10-11):** the root account's password state and recovery-mode behaviour (`sulogin`). The earlier, wider proposal is kept in `docs/root-shell-check-proposal.md` for reference.

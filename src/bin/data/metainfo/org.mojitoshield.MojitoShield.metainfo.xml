@@ -34,6 +34,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.2" date="2026-10-11">
+      <description>
+        <p>Boot menu protection checks disk encryption or an active GRUB password.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-11">
       <description>
         <p>Nine revised checks and a better layout in wide windows.</p>

@@ -104,7 +104,7 @@ class ResultTests(unittest.TestCase):
             _parse_privileged_output(("firewall",), output)
 
     def test_unallowlisted_check_is_rejected_before_authentication(self):
-        self.assertEqual(PRIVILEGED_CHECK_IDS, {"firewall"})
+        self.assertEqual(PRIVILEGED_CHECK_IDS, {"firewall", "boot-menu"})
         with patch("mojitoshield_core.privileged_helper_available") as is_available:
             with self.assertRaises(ValueError):
                 run_privileged_checks(("run-arbitrary-command",))

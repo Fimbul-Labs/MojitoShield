@@ -77,6 +77,11 @@ CHASSIS_TYPE = Path("/sys/class/dmi/id/chassis_type")
 # SMBIOS chassis types for portable computers.
 PORTABLE_CHASSIS_TYPES = frozenset({8, 9, 10, 11, 14, 30, 31, 32})
 
+# Boot menu protection
+GRUB_CONFIG = Path("/boot/grub/grub.cfg")
+GRUB_CUSTOM_CONFIG = Path("/boot/grub/custom.cfg")
+GRUB_SCRIPTS = Path("/etc/grub.d")
+
 
 @dataclass(frozen=True)
 class ScreenLockSettings:
@@ -834,9 +839,59 @@ def _check_disk_encryption(check: CheckDefinition) -> CheckResult:
 # 9. Boot menu protection
 
 
+def grub_password_configured(text: str) -> bool:
+    """Return whether GRUB text sets a superuser and a password, ignoring comments."""
+    lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
+    superusers = any(
+        re.match(r"""^set\s+superusers\s*=\s*["']?[^"'\s]+""", line) for line in lines
+    )
+    password = any(re.match(r"^password(_pbkdf2)?\s+\S+\s+\S+", line) for line in lines)
+    return superusers and password
+
+
 def _check_boot_menu(check: CheckDefinition) -> CheckResult:
-    # See docs/root-shell-check-proposal.md; this stays undecided until it is approved.
-    return _result(check, Status.UNKNOWN, "boot_menu.check_not_defined")
+    system = _mount_encryption("/")
+    if system.crypt_mapping:
+        return _result(check, Status.OK, "boot_menu.protected_by_encryption", system.source)
+
+    try:
+        generated = GRUB_CONFIG.stat().st_mtime
+    except FileNotFoundError:
+        return _result(check, Status.UNKNOWN, "boot_menu.grub_not_used")
+    except OSError:
+        return _result(check, Status.UNKNOWN, "boot_menu.config_unreadable")
+
+    # GRUB reads custom.cfg directly at boot, so a password there is active at once.
+    try:
+        if grub_password_configured(GRUB_CUSTOM_CONFIG.read_text(encoding="utf-8")):
+            return _result(check, Status.OK, "boot_menu.password_active", str(GRUB_CUSTOM_CONFIG))
+    except FileNotFoundError:
+        pass
+    except (OSError, UnicodeError):
+        return _result(check, Status.AUTH_REQUIRED, "boot_menu.authorization_required")
+
+    try:
+        # update-grub only runs executable scripts.
+        scripts = {
+            path: path.read_text(encoding="utf-8", errors="replace")
+            for path in sorted(GRUB_SCRIPTS.iterdir())
+            if path.is_file() and path.stat().st_mode & 0o111
+        }
+        changed = max(
+            (path.stat().st_mtime for path, text in scripts.items()
+             if "superusers" in text or "password" in text),
+            default=0.0,
+        )
+    except OSError:
+        return _result(check, Status.UNKNOWN, "boot_menu.config_unreadable")
+
+    if grub_password_configured("\n".join(scripts.values())):
+        if changed <= generated:
+            return _result(check, Status.OK, "boot_menu.password_active", str(GRUB_SCRIPTS))
+        return _result(check, Status.AUTH_REQUIRED, "boot_menu.password_not_confirmed", str(GRUB_SCRIPTS))
+    if system.crypt_mapping is None:
+        return _result(check, Status.UNKNOWN, "boot_menu.status_unknown")
+    return _result(check, Status.WARNING, "boot_menu.no_password", str(GRUB_SCRIPTS))
 
 
 CHECKS = (
@@ -871,7 +926,7 @@ def run_checks() -> tuple[CheckResult, ...]:
     return tuple(results)
 
 
-PRIVILEGED_CHECK_IDS = frozenset({"firewall"})
+PRIVILEGED_CHECK_IDS = frozenset({"firewall", "boot-menu"})
 PRIVILEGED_HELPER_PATH = Path("/usr/libexec/mojitoshield/privileged-check")
 PRIVILEGED_POLICY_PATH = Path(
     "/usr/share/polkit-1/actions/org.mojitoshield.privileged-check.policy"
