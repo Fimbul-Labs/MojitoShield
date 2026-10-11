@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -I
 """Fixed read-only checks launched by pkexec after system authorization."""
 
 from __future__ import annotations

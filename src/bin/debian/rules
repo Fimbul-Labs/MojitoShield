@@ -2,3 +2,8 @@
 
 %:
 	dh $@ --buildsystem=none
+
+# dh_install cannot rename files; the PolicyKit action points to this fixed path.
+execute_after_dh_install:
+	install -D -m 0755 mojitoshield_privileged.py \
+		debian/mojitoshield/usr/libexec/mojitoshield/privileged-check
