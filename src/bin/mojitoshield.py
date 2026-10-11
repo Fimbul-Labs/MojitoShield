@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import locale
 import logging
-import os
 import threading
 
 import gi
@@ -66,13 +65,25 @@ def confirm_unsupported_distribution(language: str) -> bool:
     return response == Gtk.ResponseType.ACCEPT
 
 
+APPLICATION_ID = "org.mojitoshield.MojitoShield"
+PENDING_MESSAGE_ID = "scan.pending"
+PENDING_ICON = "content-loading-symbolic"
+STATUS_ICONS = {
+    Status.OK: "emblem-default-symbolic",
+    Status.WARNING: "dialog-warning-symbolic",
+    Status.UNKNOWN: "dialog-question-symbolic",
+    Status.AUTH_REQUIRED: "system-lock-screen-symbolic",
+}
+
+
+def status_presentation(check: CheckResult, language: str) -> tuple[str, str]:
+    """Return the status text and icon name; a pending check has no status yet."""
+    if check.message_id == PENDING_MESSAGE_ID:
+        return translate("status.pending", language), PENDING_ICON
+    return translate(f"status.{check.status.value}", language), STATUS_ICONS[check.status]
+
+
 class CheckRow(Gtk.ListBoxRow):
-    _STATUS_ICONS = {
-        Status.OK: "emblem-default-symbolic",
-        Status.WARNING: "dialog-warning-symbolic",
-        Status.UNKNOWN: "dialog-question-symbolic",
-        Status.AUTH_REQUIRED: "system-lock-screen-symbolic",
-    }
 
     def __init__(self, check: CheckResult, language: str) -> None:
         super().__init__()
@@ -105,15 +116,12 @@ class CheckRow(Gtk.ListBoxRow):
 
     def update(self, check: CheckResult) -> None:
         self.check = check
-        self.title_label.set_text(
-            translate(f"check.{check.check_id}.title", self.language)
-        )
-        self.status_label.set_text(
-            translate(f"status.{check.status.value}", self.language)
-        )
-        self.status_icon.set_from_icon_name(
-            self._STATUS_ICONS[check.status], Gtk.IconSize.MENU
-        )
+        title = translate(f"check.{check.check_id}.title", self.language)
+        status_text, icon_name = status_presentation(check, self.language)
+        self.title_label.set_text(title)
+        self.status_label.set_text(status_text)
+        self.status_icon.set_from_icon_name(icon_name, Gtk.IconSize.MENU)
+        self.get_accessible().set_name(f"{title}: {status_text}")
 
 
 def pending_result(check) -> CheckResult:
@@ -121,7 +129,7 @@ def pending_result(check) -> CheckResult:
         check_id=check.check_id,
         level=check.level,
         status=Status.UNKNOWN,
-        message_id="scan.pending",
+        message_id=PENDING_MESSAGE_ID,
     )
 
 
@@ -152,7 +160,11 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.refresh_button.get_accessible().set_name(
             translate("app.refresh", language)
         )
-        self.refresh_button.connect("clicked", self._start_scan)
+        self.refresh_button.set_action_name("win.refresh")
+        refresh_action = Gio.SimpleAction.new("refresh", None)
+        refresh_action.connect("activate", lambda *_args: self._start_scan())
+        self.add_action(refresh_action)
+        self._refresh_action = refresh_action
         header.pack_end(self.refresh_button)
 
         self.extended_button = Gtk.Button(label=translate("app.extended_scan", language))
@@ -183,30 +195,16 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         list_scroller.set_size_request(280, 220)
         self.main_paned.pack1(list_scroller, True, False)
 
-        checks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        list_scroller.add(checks_box)
-        self._list_boxes: list[Gtk.ListBox] = []
-        for level in (1, 2):
-            group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            heading_label = Gtk.Label()
-            heading_label.set_markup(
-                f"<b>{GLib.markup_escape_text(translate(f'level.{level}', language))}</b>"
-            )
-            heading_label.set_xalign(0)
-            group.pack_start(heading_label, False, False, 4)
-
-            list_box = Gtk.ListBox()
-            list_box.set_selection_mode(Gtk.SelectionMode.SINGLE)
-            list_box.connect("row-selected", self._on_row_selected)
-            self._list_boxes.append(list_box)
-            group.pack_start(list_box, False, False, 0)
-            for definition in CHECKS:
-                if definition.level != level:
-                    continue
-                row = CheckRow(pending_result(definition), language)
-                self._rows[definition.check_id] = row
-                list_box.add(row)
-            checks_box.pack_start(group, False, False, 0)
+        self.check_list = Gtk.ListBox()
+        self.check_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.check_list.set_header_func(self._level_header)
+        self.check_list.connect("row-selected", self._on_row_selected)
+        self.check_list.get_accessible().set_name(translate("app.check_list", language))
+        list_scroller.add(self.check_list)
+        for definition in sorted(CHECKS, key=lambda check: check.level):
+            row = CheckRow(pending_result(definition), language)
+            self._rows[definition.check_id] = row
+            self.check_list.add(row)
 
         detail_scroller = Gtk.ScrolledWindow()
         detail_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -221,7 +219,6 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.detail_title = Gtk.Label()
         self.detail_title.set_xalign(0)
         self.detail_title.set_line_wrap(True)
-        self.detail_title.get_style_context().add_class("title-3")
         detail_box.pack_start(self.detail_title, False, False, 0)
 
         status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -265,13 +262,34 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
 
         self.main_paned.connect("size-allocate", self._adapt_layout)
         self._show_detail_prompt()
-        first_row = self._rows[CHECKS[0].check_id]
-        first_list = first_row.get_parent()
-        first_list.select_row(first_row)
+        self.check_list.select_row(self._rows[CHECKS[0].check_id])
 
         self.show_all()
         self.extended_button.hide()
+        # Start keyboard focus in the check list, not in the selectable detail text.
+        self.check_list.get_selected_row().grab_focus()
         self._start_scan()
+
+    def _level_header(self, row: CheckRow, before: CheckRow | None) -> None:
+        level = row.check.level
+        if before is not None and before.check.level == level:
+            row.set_header(None)
+            return
+        if row.get_header() is not None:
+            return
+        heading = Gtk.Label()
+        heading.set_markup(
+            f"<b>{GLib.markup_escape_text(translate(f'level.{level}', self.language))}</b>"
+        )
+        heading.set_xalign(0)
+        heading.set_margin_top(4 if before is None else 14)
+        heading.set_margin_bottom(4)
+        row.set_header(heading)
+
+    def _set_detail_title(self, text: str) -> None:
+        self.detail_title.set_markup(
+            f"<big><b>{GLib.markup_escape_text(text)}</b></big>"
+        )
 
     def _adapt_layout(self, _widget, allocation) -> None:
         orientation = (
@@ -288,7 +306,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
             )
 
     def _show_detail_prompt(self) -> None:
-        self.detail_title.set_text(translate("app.title", self.language))
+        self._set_detail_title(translate("app.title", self.language))
         self.detail_status_label.set_text("")
         self.detail_status_icon.clear()
         self.detail_result.set_text(translate("app.select_check", self.language))
@@ -306,15 +324,10 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self._show_check_detail(self._results.get(check_id) or pending_result(row.check))
 
     def _show_check_detail(self, check: CheckResult) -> None:
-        self.detail_title.set_text(
-            translate(f"check.{check.check_id}.title", self.language)
-        )
-        self.detail_status_icon.set_from_icon_name(
-            CheckRow._STATUS_ICONS[check.status], Gtk.IconSize.MENU
-        )
-        self.detail_status_label.set_text(
-            translate(f"status.{check.status.value}", self.language)
-        )
+        self._set_detail_title(translate(f"check.{check.check_id}.title", self.language))
+        status_text, icon_name = status_presentation(check, self.language)
+        self.detail_status_icon.set_from_icon_name(icon_name, Gtk.IconSize.MENU)
+        self.detail_status_label.set_text(status_text)
         self.detail_result.set_text(
             translate(check.message_id, self.language, **dict(check.data))
         )
@@ -339,9 +352,13 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.extended_button.set_sensitive(False)
         for definition in CHECKS:
             self._rows[definition.check_id].update(pending_result(definition))
-        self._show_detail_prompt()
+        selected = self._rows.get(self._selected_check_id or "")
+        if selected is not None:
+            self._show_check_detail(selected.check)
+        else:
+            self._show_detail_prompt()
 
-        self.refresh_button.set_sensitive(False)
+        self._refresh_action.set_enabled(False)
         self.summary_label.set_text(
             translate("app.scanning", self.language, count=str(len(CHECKS)))
         )
@@ -376,15 +393,18 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
             self.summary_label.set_text(translate("app.scan_failed", self.language))
             self.extended_button.hide()
 
-        self.refresh_button.set_sensitive(True)
+        self._refresh_action.set_enabled(True)
         return GLib.SOURCE_REMOVE
 
     def _update_summary(self, prefix: str = "") -> None:
         counts = {status: 0 for status in Status}
         for result in self._results.values():
             counts[result.status] += 1
+        summary_key = (
+            "app.summary_incomplete" if counts[Status.AUTH_REQUIRED] else "app.summary"
+        )
         summary = translate(
-            "app.summary",
+            summary_key,
             self.language,
             ok=str(counts[Status.OK]),
             warning=str(counts[Status.WARNING]),
@@ -419,7 +439,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         if not check_ids:
             return
 
-        self.refresh_button.set_sensitive(False)
+        self._refresh_action.set_enabled(False)
         self.extended_button.set_sensitive(False)
         self.summary_label.set_text(translate("app.extended_scanning", self.language))
 
@@ -454,13 +474,13 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
             translate(message_key, self.language) if message_key else ""
         )
         self._update_extended_button()
-        self.refresh_button.set_sensitive(True)
+        self._refresh_action.set_enabled(True)
         return GLib.SOURCE_REMOVE
 
 class MojitoShieldApplication(Gtk.Application):
     def __init__(self) -> None:
         super().__init__(
-            application_id="org.mojitoshield.application",
+            application_id=APPLICATION_ID,
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
         self.window = None
@@ -479,6 +499,15 @@ class MojitoShieldApplication(Gtk.Application):
 
         self.window = MojitoShieldWindow(self, self.language)
         self.window.show_all()
+
+    def do_startup(self) -> None:
+        Gtk.Application.do_startup(self)
+        Gtk.Window.set_default_icon_name(APPLICATION_ID)
+        self.set_accels_for_action("win.refresh", ["F5", "<Control>r"])
+        self.set_accels_for_action("app.quit", ["<Control>q"])
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", lambda *_args: self.quit())
+        self.add_action(quit_action)
 
 
 def main() -> int:

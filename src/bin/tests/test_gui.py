@@ -1,0 +1,160 @@
+"""GTK smoke tests; skipped when no display is available."""
+
+import os
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+from mojitoshield_core import CHECKS, CheckResult, Status
+
+try:
+    import gi
+
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gio, Gtk
+
+    GTK_AVAILABLE = Gtk.init_check(None)[0]
+except (ImportError, ValueError):
+    GTK_AVAILABLE = False
+
+if GTK_AVAILABLE:
+    import mojitoshield as gui
+
+
+def fake_results(auth_required: frozenset[str] = frozenset()) -> tuple[CheckResult, ...]:
+    return tuple(
+        CheckResult(
+            check_id=definition.check_id,
+            level=definition.level,
+            status=Status.AUTH_REQUIRED if definition.check_id in auth_required else Status.OK,
+            message_id=(
+                "firewall.authorization_required"
+                if definition.check_id in auth_required
+                else "firewall.active"
+            ),
+        )
+        for definition in CHECKS
+    )
+
+
+def wait_until(condition, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        while Gtk.events_pending():
+            Gtk.main_iteration_do(False)
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+@unittest.skipUnless(GTK_AVAILABLE, "GTK display not available")
+class WindowSmokeTests(unittest.TestCase):
+    application = None
+
+    @classmethod
+    def setUpClass(cls):
+        # A process can only register one anonymous application on the session bus.
+        if WindowSmokeTests.application is None:
+            WindowSmokeTests.application = Gtk.Application(
+                flags=Gio.ApplicationFlags.NON_UNIQUE
+            )
+            WindowSmokeTests.application.register(None)
+
+    def open_window(self, language: str, results: tuple[CheckResult, ...], release=None):
+        application = self.application
+
+        def run_checks():
+            if release is not None:
+                release.wait(5)
+            return results
+
+        patches = (
+            patch("mojitoshield_core.run_checks", side_effect=run_checks),
+            patch("mojitoshield.privileged_helper_available", return_value=False),
+        )
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        window = gui.MojitoShieldWindow(application, language)
+        self.addCleanup(window.destroy)
+        return window
+
+    def scan_finished(self, window) -> bool:
+        return window._refresh_action.get_enabled()
+
+    def test_window_lists_all_checks_in_one_keyboard_navigable_list(self):
+        window = self.open_window("sv", fake_results())
+        self.assertTrue(wait_until(lambda: self.scan_finished(window)))
+
+        rows = window.check_list.get_children()
+        self.assertEqual(len(rows), 11)
+        self.assertEqual([row.check.level for row in rows], [1] * 8 + [2] * 3)
+        headers = [row.get_header() for row in rows if row.get_header() is not None]
+        self.assertEqual([header.get_text() for header in headers], ["Nivå 1", "Nivå 2"])
+        self.assertEqual(window.check_list.get_selected_row().check.check_id, "firewall")
+        self.assertEqual(window.detail_title.get_text(), "Brandvägg")
+        self.assertEqual(rows[0].get_accessible().get_name(), "Brandvägg: OK")
+
+    def test_rows_show_checking_until_results_arrive(self):
+        release = threading.Event()
+        window = self.open_window("en", fake_results(), release)
+        wait_until(lambda: False, timeout=0.1)
+
+        first_row = window.check_list.get_children()[0]
+        self.assertEqual(first_row.status_label.get_text(), "Checking…")
+        self.assertFalse(self.scan_finished(window))
+
+        release.set()
+        self.assertTrue(wait_until(lambda: self.scan_finished(window)))
+        self.assertEqual(first_row.status_label.get_text(), "OK")
+
+    def test_scan_is_not_called_complete_while_permission_is_missing(self):
+        window = self.open_window("en", fake_results(frozenset({"firewall"})))
+        self.assertTrue(wait_until(lambda: self.scan_finished(window)))
+
+        summary = window.summary_label.get_text()
+        self.assertIn("not complete", summary)
+        self.assertNotIn("Scan complete", summary)
+        self.assertTrue(window.extended_button.get_visible())
+        self.assertFalse(window.extended_button.get_sensitive())
+        self.assertEqual(window.extended_button.get_label(), "Extended scan (not installed)")
+
+    def test_complete_scan_hides_extended_scan(self):
+        window = self.open_window("en", fake_results())
+        self.assertTrue(wait_until(lambda: self.scan_finished(window)))
+
+        self.assertTrue(window.summary_label.get_text().startswith("Scan complete"))
+        self.assertFalse(window.extended_button.get_visible())
+
+
+@unittest.skipUnless(GTK_AVAILABLE, "GTK display not available")
+class LocaleDirectionTests(unittest.TestCase):
+    def tearDown(self):
+        Gtk.Widget.set_default_direction(Gtk.TextDirection.LTR)
+
+    def test_arabic_locale_uses_right_to_left_layout(self):
+        with (
+            patch.dict(os.environ, {"LC_ALL": "ar_EG.UTF-8"}),
+            patch("mojitoshield.locale.setlocale"),
+        ):
+            language = gui.configure_locale()
+
+        self.assertEqual(language, "ar")
+        self.assertEqual(Gtk.Widget.get_default_direction(), Gtk.TextDirection.RTL)
+
+    def test_swedish_locale_keeps_left_to_right_layout(self):
+        with (
+            patch.dict(os.environ, {"LC_ALL": "sv_SE.UTF-8"}),
+            patch("mojitoshield.locale.setlocale"),
+        ):
+            language = gui.configure_locale()
+
+        self.assertEqual(language, "sv")
+        self.assertEqual(Gtk.Widget.get_default_direction(), Gtk.TextDirection.LTR)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -5,7 +5,7 @@ import re
 import unittest
 from pathlib import Path
 
-from mojitoshield_core import CHECKS, SCREEN_LOCK_SETTINGS
+from mojitoshield_core import CHECKS, SCREEN_LOCK_SETTINGS, Status
 from mojitoshield_i18n import ENGLISH, SWEDISH
 
 
@@ -42,11 +42,25 @@ class TranslationCatalogTests(unittest.TestCase):
         }
 
     def interface_message_ids(self) -> set[str]:
-        return {
+        message_ids = {
+            node.args[0].value
+            for node in ast.walk(ast.parse(source("mojitoshield.py")))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "translate"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        }
+        # Keys chosen through variables, minus GTK action names that share the prefix.
+        message_ids |= {
             value
             for value in string_constants("mojitoshield.py")
-            if re.match(r"^(app|status|scan|level)\.[a-z_.0-9]+$", value)
-        }
+            if re.match(r"^app\.[a-z_.]+$", value)
+        } - {"app.quit"}
+        # Keys built at runtime from levels, statuses and the pending marker.
+        message_ids |= {"level.1", "level.2", "scan.pending"}
+        message_ids |= {f"status.{status.value}" for status in Status}
+        return message_ids
 
     def test_every_result_message_has_english_and_swedish_text(self):
         message_ids = self.analysis_message_ids()
