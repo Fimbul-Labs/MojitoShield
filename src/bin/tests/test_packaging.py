@@ -54,6 +54,11 @@ class DebianPackagingTests(unittest.TestCase):
         )
         self.assertIn(installed_app, launcher)
 
+    def test_package_requires_the_python_version_the_code_uses(self):
+        # platform.freedesktop_os_release and runtime "X | Y" unions need Python 3.10.
+        control = (SOURCE_ROOT / "debian/control").read_text(encoding="utf-8")
+        self.assertRegex(control, r"(?m)^Depends:.*\bpython3 \(>= 3\.10\)")
+
     def test_helper_runs_python_in_isolated_mode(self):
         helper = SOURCE_ROOT / "mojitoshield_privileged.py"
         first_line = helper.read_text(encoding="utf-8").splitlines()[0]
