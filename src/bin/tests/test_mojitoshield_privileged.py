@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import subprocess
 import unittest
 import xml.etree.ElementTree as ET
@@ -9,9 +11,56 @@ import mojitoshield_privileged as helper
 from mojitoshield_core import (
     PKEXEC_PATH,
     PRIVILEGED_HELPER_PATH,
+    PrivilegedHelperUnavailable,
+    PrivilegedScanCancelled,
     PrivilegedScanFailed,
+    _is_trusted_system_path,
     run_privileged_checks,
 )
+
+
+def _fake_stat(file_mode: int, file_uid: int = 0, directory_mode: int = 0o755):
+    """Return a Path.stat replacement for a single file in root-owned directories."""
+
+    def fake(path: Path, *args, **kwargs) -> os.stat_result:
+        if path.name == "target":
+            return os.stat_result((stat.S_IFREG | file_mode, 0, 0, 1, file_uid, 0, 0, 0, 0, 0))
+        return os.stat_result((stat.S_IFDIR | directory_mode, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+
+    return fake
+
+
+class TrustedPathTests(unittest.TestCase):
+    path = Path("/usr/share/example/target")
+
+    def _is_trusted(self, *, executable: bool, **stat_options) -> bool:
+        with (
+            patch.object(Path, "resolve", lambda path, strict=False: path),
+            patch.object(Path, "stat", _fake_stat(**stat_options)),
+        ):
+            return _is_trusted_system_path(self.path, executable=executable)
+
+    def test_root_owned_policy_file_is_trusted_without_execute_bit(self):
+        self.assertTrue(self._is_trusted(executable=False, file_mode=0o644))
+
+    def test_root_owned_helper_must_be_executable(self):
+        self.assertTrue(self._is_trusted(executable=True, file_mode=0o755))
+        self.assertFalse(self._is_trusted(executable=True, file_mode=0o644))
+
+    def test_user_owned_or_writable_files_are_not_trusted(self):
+        self.assertFalse(self._is_trusted(executable=False, file_mode=0o644, file_uid=1000))
+        self.assertFalse(self._is_trusted(executable=False, file_mode=0o664))
+        self.assertFalse(self._is_trusted(executable=False, file_mode=0o646))
+
+    def test_writable_parent_directory_is_not_trusted(self):
+        self.assertFalse(
+            self._is_trusted(executable=False, file_mode=0o644, directory_mode=0o777)
+        )
+
+    def test_missing_file_is_not_trusted(self):
+        self.assertFalse(
+            _is_trusted_system_path(Path("/nonexistent/mojitoshield"), executable=False)
+        )
 
 
 class PrivilegedHelperTests(unittest.TestCase):
@@ -93,6 +142,39 @@ class PrivilegedHelperTests(unittest.TestCase):
         )
         self.assertNotIn("shell", run.call_args.kwargs)
         self.assertEqual(result.message_id, "firewall.active")
+
+    def test_dismissed_authorization_dialog_is_reported_as_cancelled(self):
+        process = subprocess.CompletedProcess([], 126, "", "")
+        with (
+            patch("mojitoshield_core.privileged_helper_available", return_value=True),
+            patch("mojitoshield_core.subprocess.run", return_value=process),
+        ):
+            with self.assertRaises(PrivilegedScanCancelled):
+                run_privileged_checks(("firewall",))
+
+    def test_helper_failure_and_timeout_are_reported_as_failed(self):
+        failures = (
+            {"return_value": subprocess.CompletedProcess([], 1, "", "")},
+            {"side_effect": subprocess.TimeoutExpired("pkexec", 30)},
+            {"side_effect": OSError()},
+        )
+        for failure in failures:
+            with (
+                self.subTest(failure=failure),
+                patch("mojitoshield_core.privileged_helper_available", return_value=True),
+                patch("mojitoshield_core.subprocess.run", **failure),
+            ):
+                with self.assertRaises(PrivilegedScanFailed):
+                    run_privileged_checks(("firewall",))
+
+    def test_missing_helper_is_detected_before_pkexec_starts(self):
+        with (
+            patch("mojitoshield_core.privileged_helper_available", return_value=False),
+            patch("mojitoshield_core.subprocess.run") as run,
+        ):
+            with self.assertRaises(PrivilegedHelperUnavailable):
+                run_privileged_checks(("firewall",))
+        run.assert_not_called()
 
     def test_policy_action_points_to_the_fixed_helper_and_does_not_cache_auth(self):
         policy_path = (

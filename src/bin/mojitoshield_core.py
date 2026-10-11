@@ -466,8 +466,8 @@ class PrivilegedScanFailed(PrivilegedScanError):
 
 def _is_trusted_system_path(path: Path, *, executable: bool) -> bool:
     try:
-        executable = path.resolve(strict=True)
-        file_info = executable.stat()
+        resolved = path.resolve(strict=True)
+        file_info = resolved.stat()
     except OSError:
         return False
 
@@ -479,7 +479,7 @@ def _is_trusted_system_path(path: Path, *, executable: bool) -> bool:
     ):
         return False
 
-    parent = executable.parent
+    parent = resolved.parent
     while parent != parent.parent:
         try:
             directory_info = parent.stat()
