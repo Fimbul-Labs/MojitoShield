@@ -76,13 +76,6 @@ def _firewall() -> dict[str, object]:
 def _timeshift() -> dict[str, object]:
     try:
         snapshot_count = sum(path.is_dir() for path in SNAPSHOT_DIRECTORY.iterdir())
-    except FileNotFoundError:
-        return {
-            "check_id": "timeshift",
-            "status": "unknown",
-            "message_id": "timeshift.path_unreadable",
-            "evidence": str(SNAPSHOT_DIRECTORY),
-        }
     except OSError:
         return {
             "check_id": "timeshift",
