@@ -4,3 +4,5 @@ mojitoshield_i18n.py usr/lib/mojitoshield/
 mojitoshield usr/bin/
 data/polkit/org.mojitoshield.privileged-check.policy usr/share/polkit-1/actions/
 data/applications/org.mojitoshield.MojitoShield.desktop usr/share/applications/
+data/metainfo/org.mojitoshield.MojitoShield.metainfo.xml usr/share/metainfo/
+data/icons/hicolor/scalable/apps/org.mojitoshield.MojitoShield.svg usr/share/icons/hicolor/scalable/apps/

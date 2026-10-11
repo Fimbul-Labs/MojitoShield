@@ -1,6 +1,8 @@
+import re
 import shutil
 import subprocess
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from mojitoshield_core import PRIVILEGED_HELPER_PATH, PRIVILEGED_POLICY_PATH
@@ -56,6 +58,47 @@ class DebianPackagingTests(unittest.TestCase):
         helper = SOURCE_ROOT / "mojitoshield_privileged.py"
         first_line = helper.read_text(encoding="utf-8").splitlines()[0]
         self.assertEqual(first_line, "#!/usr/bin/python3 -I")
+
+
+class ApplicationIdentityTests(unittest.TestCase):
+    def application_id(self) -> str:
+        gui_source = (SOURCE_ROOT / "mojitoshield.py").read_text(encoding="utf-8")
+        return re.search(r'^APPLICATION_ID = "([^"]+)"$', gui_source, re.M).group(1)
+
+    def test_desktop_entry_metainfo_and_icon_share_the_application_id(self):
+        application_id = self.application_id()
+        data = SOURCE_ROOT / "data"
+        self.assertTrue((data / f"applications/{application_id}.desktop").is_file())
+        self.assertTrue(
+            (data / f"icons/hicolor/scalable/apps/{application_id}.svg").is_file()
+        )
+
+        metainfo = ET.parse(data / f"metainfo/{application_id}.metainfo.xml").getroot()
+        self.assertEqual(metainfo.findtext("id"), application_id)
+        self.assertEqual(metainfo.findtext("launchable"), f"{application_id}.desktop")
+
+        desktop = (data / f"applications/{application_id}.desktop").read_text(encoding="utf-8")
+        self.assertIn(f"\nIcon={application_id}\n", desktop)
+
+    def test_metainfo_and_icon_are_packaged(self):
+        manifest = (SOURCE_ROOT / "debian/mojitoshield.install").read_text(encoding="utf-8")
+        self.assertIn("usr/share/metainfo/", manifest)
+        self.assertIn("usr/share/icons/hicolor/scalable/apps/", manifest)
+
+
+@unittest.skipIf(shutil.which("appstreamcli") is None, "appstreamcli missing")
+class MetainfoTests(unittest.TestCase):
+    def test_metainfo_has_no_validation_errors(self):
+        (metainfo,) = (SOURCE_ROOT / "data/metainfo").glob("*.metainfo.xml")
+        result = subprocess.run(
+            ["appstreamcli", "validate", "--no-net", "--no-color", str(metainfo)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={"LC_ALL": "C", "LANGUAGE": "C", "PATH": "/usr/bin:/bin"},
+        )
+        errors = [line for line in result.stdout.splitlines() if line.startswith("E:")]
+        self.assertEqual(errors, [], result.stdout)
 
 
 @unittest.skipIf(shutil.which("desktop-file-validate") is None, "desktop-file-validate missing")

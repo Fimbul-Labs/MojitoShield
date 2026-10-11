@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.mojitoshield.MojitoShield</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>MojitoShield</name>
+  <summary>Local security checks for Linux Mint</summary>
+  <summary xml:lang="sv">Lokala säkerhetskontroller för Linux Mint</summary>
+  <description>
+    <p>
+      MojitoShield runs local, read-only checks of basic security settings and explains
+      what each result means, what was checked and what could not be determined.
+      It is guidance for everyday users, not a complete security audit.
+    </p>
+    <p xml:lang="sv">
+      MojitoShield gör lokala, skrivskyddade kontroller av grundläggande säkerhetsinställningar
+      och förklarar vad varje resultat betyder, vad som kontrollerades och vad som inte kunde avgöras.
+      Det är vägledning för vanliga användare, inte en fullständig säkerhetsrevision.
+    </p>
+    <ul>
+      <li>Checks firewall, automatic updates, Timeshift, AppArmor, SSH, ClamAV, screen lock, Bluetooth and disk encryption</li>
+      <li>Works offline and never changes system settings</li>
+      <li>Asks for administrator permission only for an optional extended scan</li>
+    </ul>
+    <ul xml:lang="sv">
+      <li>Kontrollerar brandvägg, automatiska uppdateringar, Timeshift, AppArmor, SSH, ClamAV, skärmlås, Bluetooth och diskkryptering</li>
+      <li>Fungerar offline och ändrar aldrig systeminställningar</li>
+      <li>Ber om administratörsbehörighet endast för en valfri utökad skanning</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.mojitoshield.MojitoShield.desktop</launchable>
+  <icon type="stock">org.mojitoshield.MojitoShield</icon>
+  <developer id="org.mojitoshield">
+    <name>MojitoShield contributors</name>
+  </developer>
+  <categories>
+    <category>System</category>
+    <category>Security</category>
+  </categories>
+  <provides>
+    <binary>mojitoshield</binary>
+  </provides>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-09">
+      <description>
+        <p>First prototype.</p>
+      </description>
+    </release>
+  </releases>
+</component>
