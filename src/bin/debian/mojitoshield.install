@@ -1,0 +1,7 @@
+mojitoshield.py usr/lib/mojitoshield/
+mojitoshield_core.py usr/lib/mojitoshield/
+mojitoshield_i18n.py usr/lib/mojitoshield/
+mojitoshield_privileged.py usr/libexec/mojitoshield/privileged-check
+bin/mojitoshield usr/bin/
+data/polkit/org.mojitoshield.privileged-check.policy usr/share/polkit-1/actions/
+data/applications/org.mojitoshield.MojitoShield.desktop usr/share/applications/

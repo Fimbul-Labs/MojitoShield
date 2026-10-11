@@ -1,0 +1,130 @@
+# MojitoShield
+
+MojitoShield är en lokal, offline GTK-app för Linux Mint som kontrollerar och förklarar ett antal grundläggande säkerhetsförhållanden. Den här README-filen är projektets produktdefinition och instruktion till utvecklare och framtida kodassistenter.
+
+## Vision
+
+MojitoShield ska hjälpa Linux Mint-användare att förstå vad som är kontrollerat, vad som kan behöva uppmärksamhet och vad appen inte kan avgöra. Den ska vara tydlig för nybörjare utan att överdriva risker eller ge falsk trygghet.
+
+Appen ska följa Linux Mints användarcentrerade principer: vara enkel, stabil, respektfull mot användarens val och fri från onödiga systemändringar. MojitoShield är en vägledning, inte en fullständig säkerhetsrevision eller garanti mot intrång.
+
+## Mål och plattform
+
+- GTK-baserad desktop-app skriven i Python.
+- Linux Mint och Linux Mint Debian Edition (LMDE) är stödda målmiljöer.
+- På andra distributioner visar appen en tydlig varning om att kontrollerna kan vara felaktiga eller inte tillämpliga. Användaren kan fortsätta eller avsluta.
+- Appen arbetar lokalt och offline. Den gör inga externa nätverksanrop.
+- Appen kan paketeras som Debian-paket och göras lämplig för Linux Mint Software Manager.
+
+## Säkerhetskontroller
+
+Behåll de ursprungliga två nivåerna och ämnena, med lösenordsstyrka undantagen. Första versionen omfattar 11 punkter:
+
+### Nivå 1
+
+1. Brandvägg
+2. Automatiska systemuppdateringar
+3. Timeshift
+4. SELinux/AppArmor
+5. SSH och annan fjärråtkomst
+6. ClamAV
+7. Skärmlås
+8. Bluetooth
+
+### Nivå 2
+
+9. Root-shell vid uppstart
+10. Full diskkryptering
+11. Hemkatalogs- eller lokal kryptering
+
+Innan en kontroll implementeras ska dess kontrakt dokumenteras:
+
+- Vad läser eller kontrollerar appen?
+- Vilken lokal informationskälla används?
+- Vad betyder resultatet, och vad kan inte slutsatsdras?
+- Varför spelar det roll och vad kan användaren göra härnäst?
+
+En sak ska inte automatiskt beskrivas som risk bara för att den är avstängd, saknas eller används på ett visst sätt. ClamAV är inte ett universellt krav. Bluetooth kan vara motiverat. Timeshift är återställningsberedskap och ersätter inte säkerhetskopiering av personliga filer. Kontroll av root-shell vid uppstart måste definieras som en konkret, säker och mätbar kontroll; annars visas att appen inte kan avgöra statusen.
+
+MojitoShield ska inte kontrollera lösenordsstyrka, läsa in lösenord eller lagra autentiseringsuppgifter.
+
+## Resultat och ton
+
+Varje resultat ska vara sakligt och förklarat. Appen använder följande statusar:
+
+- **OK:** kontrollen bekräftar det förväntade skyddet.
+- **Varning:** kontrollen har hittat en konkret avvikelse från rekommendationen. Beskriv fynd och möjlig konsekvens utan alarmistiskt språk.
+- **Kunde inte avgöra:** tillgängligt underlag räcker inte. Detta betyder varken att en risk är bekräftad eller att systemet är säkert.
+- **Kräver utökad behörighet:** kontrollen kan inte utföras av den vanliga skanningen och väntar på användarens uttryckliga godkännande.
+
+Visa tydligt vilken kontroll som gjordes, vilket underlag den använde och dess begränsningar. Använd inte ett sammanvägt säkerhetspoäng.
+
+## Användarflöde och gränssnitt
+
+1. Vid start identifierar MojitoShield distributionen och varnar om den inte är Mint eller LMDE.
+2. MojitoShield kör en ny lokal kontrolluppsättning vid varje programstart.
+3. Resultaten visas i de två nivåerna, med begriplig status, förklaring och eventuell manuell uppföljning.
+4. Om kontroller behöver förhöjd behörighet visar MojitoShield knappen **Utökad skanning**. Den kör endast dessa kontroller efter systemets PolicyKit-dialog.
+
+Gränssnittet ska vara lätt att navigera med tangentbord och skärmläsare, använda text tillsammans med färg för status och följa systemets GTK-tema. Ingen rapport- eller exportfunktion ska finnas. Resultaten sparas inte för senare körningar.
+
+Huvudvyn ska vara kompakt och bestå av en statusöversikt, en tangentbordsnavigerbar kontrollista grupperad efter nivå och en separat detaljpanel för vald kontroll. På smala fönster placeras listan och detaljpanelen vertikalt. Använd GTK:s standardkomponenter, ikon-tema och Mint-tema; undvik egen CSS och dekorativa kort. Status visas alltid både med text och en standardikon.
+
+Om användaren avböjer autentiseringen körs inte de utökade kontrollerna. De behåller statusen **Kräver utökad behörighet**, och gränssnittet får inte markera hela skanningen som fullständig.
+
+## Behörighet och integritet
+
+- Kör först alla kontroller som kan utföras utan förhöjd behörighet.
+- Brandväggens UFW-status och andra skyddade lokala uppgifter kan kontrolleras separat med **Utökad skanning** efter uttryckligt användarval genom Linux Mints PolicyKit-dialog.
+- Den utökade skanningen använder endast en paketerad, root-ägd hjälpprocess med fasta kontroll-ID:n och skrivskyddade åtgärder. Den tar aldrig emot godtyckliga kommandon från UI:t.
+- MojitoShield får aldrig ha ett eget lösenordsfält, starta en generell root-shell eller samla in och lagra autentiseringsuppgifter.
+- Om användaren avböjer behörighet lämnas de berörda kontrollerna i statusen **Kräver utökad behörighet**.
+- Appen ändrar inte systeminställningar, installerar inte paket och kör inte godtyckliga root-kommandon.
+- Loggar får inte innehålla lösenord, hemligheter eller onödiga personuppgifter.
+
+Systemkommandon vars utdata tolkas ska köras med en fast C-locale. Analyskärnan returnerar stabila kontroll-ID:n, statuskoder och fakta; endast presentationslagret väljer översatta titlar och meddelanden.
+
+## Språk
+
+Analyskärnan är språkoberoende: den returnerar fasta status- och meddelandekoder och kör parserade systemkommandon med C-locale. Presentationslagret följer Linux Mints systemlocale. Prototypen har engelska och svenska texter; andra språk faller tillbaka till engelska. Arabiska aktiverar RTL-layout, men arabiska översättningar återstår. Språkresurser ska paketeras lokalt utan nätverksanrop.
+
+## Arkitektur och kodkvalitet
+
+Håll implementationen liten och lätt att granska. Separera kontrollmodeller och diagnostik från GTK-gränssnittet så att logiken kan testas utan att starta GUI:t. Lägg bara till moduler när de ger tydligt avgränsat ansvar.
+
+- Python 3 och PyGObject med den GTK-version som passar de stödda Mint-miljöerna.
+- PEP 8, Pythonic namn och typannoteringar där de förtydligar koden.
+- Små, fokuserade funktioner; dataclasses och enums där de gör modellen tydligare.
+- Undvik onödiga beroenden, död kod och breda undantagsfångster.
+- Ett fel i en kontroll får inte krascha hela appen. Visa **Kunde inte avgöra** och en kort, användbar förklaring.
+- Logga tekniska detaljer lokalt utan hemligheter eller onödiga personuppgifter.
+
+## Testning och verifiering
+
+Tester ska täcka:
+
+- alla 11 kontrollresultat och skillnaden mellan verifierad avvikelse, okänt underlag och krav på utökad behörighet;
+- Linux Mint, LMDE, annan Ubuntu-/Debianbaserad distribution och okänd distribution;
+- felvägar som saknade eller felaktiga systemuppgifter och otillgänglig information;
+- att systemkommandon använder språkneutral C-locale och att samma fakta ger samma status oavsett användarens språk;
+- PolicyKit-beviljande, avböjande och avbruten dialog, samt att endast allowlistade kontroller kan köras utökat;
+- att diagnostiken inte ändrar systemet, hanterar lösenord eller använder nätverket;
+- språkval, arabisk RTL-layout och engelskt reservspråk.
+
+Kör enhetstester och ett GTK-/starttest. Verifiera appen i Linux Mint och LMDE. Bygg Debian-paket med desktop entry, ikon och metadata som behövs för att listas i Linux Mint Software Manager. Följ dokumenterade Mint-, GTK- och Debian-konventioner, men påstå inte att teamets godkännande är garanterat.
+
+## Projektstatus
+
+En första GTK3-prototyp finns i `mojitoshield.py`, med lokal kontrollogik i `mojitoshield_core.py`, presentationskatalog i `mojitoshield_i18n.py` och tester i `tests/`. Paketfiler, desktop entry och en PolicyKit-hjälpprocess finns som prototyp men Debian-paketet har ännu inte byggts eller installerats. På ett system med Python 3, PyGObject och GTK 3 kan grundskanningen startas med:
+
+```sh
+python3 mojitoshield.py
+```
+
+Prototypen visar de 11 ämnena i två nivåer. Grundskanningen är språkoberoende och utan sudo. Utökade kontroller är tillgängliga först från en betrodd, installerad Debian-paketering; de kan inte köras säkert direkt från en skrivbar projektkatalog. Prototypen är inte en färdig säkerhetsrevision. Debian-paketet har inte byggts eller installerats; byggmiljön saknar `debhelper-compat`.
+
+## Instruktion till utvecklare och kodassistenter
+
+Implementera planen stegvis. Börja med att precisera och testa kontrollkontrakten innan du påstår att appen kan upptäcka en risk. Prioritera säker och förklarbar diagnostik framför fler funktioner. Behåll offline-drift, Mint-integration, de två checklistnivåerna och alla säkerhetsgränser i detta dokument. Lägg inte till rapport/export, lösenordstestning eller automatiska systemändringar utan att produktdefinitionen först ändras.
+
+
