@@ -18,33 +18,31 @@ The app should follow Linux Mint's user-centred principles: be simple, stable, r
 
 ## Security checks
 
-Keep the original two levels and topics, except password strength. The first version covers 11 items:
+The first version covers 9 checks in two levels. The list was revised on 2026-10-11: ClamAV and Bluetooth were removed because neither can fairly be judged OK or Warning for a typical desktop user, full-disk and home encryption were merged so the same cause does not give two warnings, and automatic login was added.
 
-### Level 1
+### Level 1: everyday protection
 
 1. Firewall
-2. Automatic system updates
-3. Timeshift
-4. SELinux/AppArmor
-5. SSH and other remote access
-6. ClamAV
-7. Screen lock
-8. Bluetooth
+2. System up to date
+3. Screen lock
+4. Automatic login
+5. Timeshift
+6. Network services
+7. AppArmor
 
-### Level 2
+### Level 2: physical access
 
-9. Root shell at boot
-10. Full-disk encryption
-11. Home-directory or local encryption
+8. Disk encryption
+9. Boot menu protection
 
-Before a check is implemented, its contract must be documented:
+The contracts and status rules for each check are in `docs/check-contracts.md`. Before a check is implemented, its contract must be documented:
 
 - What does the app read or check?
 - Which local source of information is used?
 - What does the result mean, and what cannot be concluded?
 - Why does it matter, and what can the user do next?
 
-Something must not automatically be described as a risk just because it is turned off, missing or used in a certain way. ClamAV is not a universal requirement. Bluetooth can be justified. Timeshift is recovery readiness and does not replace backups of personal files. The root-shell-at-boot check must be defined as a concrete, safe and measurable check; otherwise the app shows that it cannot determine the status.
+Something must not automatically be described as a risk just because it is turned off, missing or used in a certain way. A network service can be deliberate. Timeshift is recovery readiness and does not replace backups of personal files. The boot menu protection check must be defined as a concrete, safe and measurable check; otherwise the app shows that it cannot determine the status.
 
 MojitoShield must not check password strength, read passwords or store credentials.
 
@@ -75,7 +73,7 @@ If the user declines authentication, the extended checks are not run. They keep 
 ## Permissions and privacy
 
 - First run all checks that can be performed without elevated permission.
-- The firewall's UFW status and other protected local information can be checked separately with **Extended scan**, after an explicit user choice, through Linux Mint's PolicyKit dialog.
+- The firewall's live UFW status can be checked separately with **Extended scan**, after an explicit user choice, through Linux Mint's PolicyKit dialog, when the readable settings are not enough.
 - The extended scan uses only a packaged, root-owned helper process with fixed check IDs and read-only actions. It never accepts arbitrary commands from the UI.
 - MojitoShield must never have its own password field, start a general root shell, or collect and store credentials.
 - If the user declines permission, the affected checks remain in the status **Requires extended permission**.
@@ -103,7 +101,7 @@ Keep the implementation small and easy to review. Separate check models and diag
 
 Tests must cover:
 
-- all 11 check results and the difference between a verified deviation, unknown evidence and a need for extended permission;
+- all 9 check results and the difference between a verified deviation, unknown evidence and a need for extended permission;
 - Linux Mint, LMDE, another Ubuntu/Debian-based distribution and an unknown distribution;
 - error paths such as missing or invalid system information and unavailable information;
 - that system commands use the language-neutral C locale and that the same facts give the same status regardless of the user's locale;
@@ -127,7 +125,7 @@ The tests are run from `src/bin` with:
 python3 -m unittest discover -s tests
 ```
 
-The prototype shows the 11 topics in two levels. The basic scan is language-independent and runs without sudo. Extended checks become available only from a trusted, installed Debian package; they cannot be run safely directly from a writable project directory. The prototype is not a finished security audit. The Debian package has not been built or installed; the build environment lacks `debhelper-compat`.
+The prototype shows the 9 checks in two levels. The basic scan is language-independent and runs without sudo. Extended checks become available only from a trusted, installed Debian package; they cannot be run safely directly from a writable project directory. The prototype is not a finished security audit. The Debian package has not been built or installed; the build environment lacks `debhelper-compat`.
 
 ## Instructions for developers and coding assistants
 
