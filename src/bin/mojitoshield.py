@@ -52,6 +52,9 @@ def confirm_unsupported_distribution() -> bool:
 
 
 APPLICATION_ID = "org.mojitoshield.MojitoShield"
+NARROW_WINDOW_WIDTH = 720
+LIST_WIDTH = 360
+DETAIL_MAX_WIDTH_CHARS = 72
 PENDING_MESSAGE_ID = "scan.pending"
 PENDING_ICON = "content-loading-symbolic"
 STATUS_ICONS = {
@@ -176,7 +179,8 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         list_scroller = Gtk.ScrolledWindow()
         list_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         list_scroller.set_size_request(280, 220)
-        self.main_paned.pack1(list_scroller, True, False)
+        # Extra width goes to the detail panel; the list keeps its width.
+        self.main_paned.pack1(list_scroller, False, False)
 
         self.check_list = Gtk.ListBox()
         self.check_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -202,6 +206,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.detail_title = Gtk.Label()
         self.detail_title.set_xalign(0)
         self.detail_title.set_line_wrap(True)
+        self._limit_line_length(self.detail_title)
         detail_box.pack_start(self.detail_title, False, False, 0)
 
         status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -215,6 +220,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.detail_result = Gtk.Label()
         self.detail_result.set_xalign(0)
         self.detail_result.set_line_wrap(True)
+        self._limit_line_length(self.detail_result)
         self.detail_result.set_selectable(True)
         detail_box.pack_start(self.detail_result, False, False, 0)
 
@@ -228,21 +234,25 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.detail_explanation = Gtk.Label()
         self.detail_explanation.set_xalign(0)
         self.detail_explanation.set_line_wrap(True)
+        self._limit_line_length(self.detail_explanation)
         self.detail_explanation.set_selectable(True)
         detail_box.pack_start(self.detail_explanation, False, False, 0)
 
         self.detail_evidence = Gtk.Label()
         self.detail_evidence.set_xalign(0)
         self.detail_evidence.set_line_wrap(True)
+        self._limit_line_length(self.detail_evidence)
         self.detail_evidence.set_selectable(True)
         detail_box.pack_start(self.detail_evidence, False, False, 0)
 
         self.detail_footer = Gtk.Label(label=translate("app.footer"))
         self.detail_footer.set_xalign(0)
         self.detail_footer.set_line_wrap(True)
+        self._limit_line_length(self.detail_footer)
         self.detail_footer.get_style_context().add_class("dim-label")
         detail_box.pack_end(self.detail_footer, False, False, 8)
 
+        self._layout_orientation: Gtk.Orientation | None = None
         self.main_paned.connect("size-allocate", self._adapt_layout)
         self._show_detail_prompt()
         self.check_list.select_row(self._rows[CHECKS[0].check_id])
@@ -274,19 +284,28 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
             f"<big><b>{GLib.markup_escape_text(text)}</b></big>"
         )
 
+    @staticmethod
+    def _limit_line_length(label: Gtk.Label) -> None:
+        # A wrapped label aligned to the start keeps readable lines in wide windows.
+        label.set_max_width_chars(DETAIL_MAX_WIDTH_CHARS)
+        label.set_halign(Gtk.Align.START)
+
     def _adapt_layout(self, _widget, allocation) -> None:
         orientation = (
             Gtk.Orientation.VERTICAL
-            if allocation.width < 720
+            if allocation.width < NARROW_WINDOW_WIDTH
             else Gtk.Orientation.HORIZONTAL
         )
-        if self.main_paned.get_orientation() != orientation:
-            self.main_paned.set_orientation(orientation)
-            self.main_paned.set_position(
-                int(allocation.height * 0.48)
-                if orientation == Gtk.Orientation.VERTICAL
-                else 360
-            )
+        # Set the split on first layout and on orientation changes; keep the user's drags otherwise.
+        if orientation == self._layout_orientation:
+            return
+        self._layout_orientation = orientation
+        self.main_paned.set_orientation(orientation)
+        self.main_paned.set_position(
+            int(allocation.height * 0.48)
+            if orientation == Gtk.Orientation.VERTICAL
+            else LIST_WIDTH
+        )
 
     def _show_detail_prompt(self) -> None:
         self._set_detail_title(translate("app.title"))

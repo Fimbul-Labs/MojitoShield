@@ -121,6 +121,16 @@ class WindowSmokeTests(unittest.TestCase):
         self.assertFalse(window.extended_button.get_sensitive())
         self.assertEqual(window.extended_button.get_label(), "Extended scan (not installed)")
 
+    def test_wide_window_keeps_list_width_and_readable_detail_lines(self):
+        window = self.open_window(fake_results())
+        window.resize(1600, 900)
+        self.assertTrue(wait_until(lambda: window.main_paned.get_allocated_width() > 1000))
+        wait_until(lambda: False, timeout=0.1)
+
+        self.assertEqual(window.main_paned.get_orientation(), Gtk.Orientation.HORIZONTAL)
+        self.assertEqual(window.main_paned.get_position(), gui.LIST_WIDTH)
+        self.assertEqual(window.detail_explanation.get_max_width_chars(), gui.DETAIL_MAX_WIDTH_CHARS)
+
     def test_complete_scan_hides_extended_scan(self):
         window = self.open_window(fake_results())
         self.assertTrue(wait_until(lambda: self.scan_finished(window)))
