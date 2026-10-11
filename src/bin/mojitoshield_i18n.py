@@ -1,9 +1,10 @@
-"""Presentation text catalog; diagnostic results use stable language-free IDs."""
+"""Presentation text catalog; diagnostic results use stable language-free IDs.
+
+The interface is English only for now. Keeping texts here, keyed by message ID,
+leaves room to add translated catalogs later without touching the checks.
+"""
 
 from __future__ import annotations
-
-import locale
-import os
 
 
 ENGLISH = {
@@ -114,136 +115,8 @@ ENGLISH = {
 }
 
 
-SWEDISH = {
-    "app.unknown_distribution": "en okänd distribution",
-    "app.unsupported.title": "MojitoShield är utvecklad för Linux Mint",
-    "app.unsupported.body": "Systemet identifierades som {distribution}. Kontrollerna kan vara felaktiga eller inte tillämpliga. Vill du fortsätta ändå?",
-    "app.abort": "Avsluta",
-    "app.continue": "Fortsätt ändå",
-    "app.refresh": "Kontrollera igen",
-    "app.extended_scan": "Utökad skanning",
-    "app.extended_scan_missing": "Utökad skanning (inte installerad)",
-    "app.extended_scan_missing_tip": "Installera MojitoShield från Debian-paketet för att aktivera behörighetskrävande kontroller.",
-    "app.scanning": "Kontrollerar {count} punkter lokalt …",
-    "app.extended_scanning": "Kontrollerar punkter som kräver administratörsbehörighet …",
-    "app.extended_cancelled": "Den utökade skanningen avbröts. Dessa kontroller är fortfarande ofullständiga.",
-    "app.extended_failed": "Den utökade skanningen misslyckades. Dessa kontroller är fortfarande ofullständiga.",
-    "app.scan_failed": "Kontrollen kunde inte slutföras. Försök igen.",
-    "app.summary": "Kontroll klar: {ok} OK, {warning} varningar, {unknown} kunde inte avgöra, {auth} kräver utökad behörighet.",
-    "app.summary_incomplete": "Grundskanningen är klar men inte fullständig: {ok} OK, {warning} varningar, {unknown} kunde inte avgöra. {auth} kräver fortfarande utökad behörighet.",
-    "app.check_list": "Säkerhetskontroller",
-    "app.footer": "MojitoShield gör lokala läskontroller. Resultaten är vägledning, inte en fullständig säkerhetsrevision.",
-    "app.details": "Vad kontrolleras?",
-    "app.select_check": "Välj en kontroll för att se resultat och detaljer.",
-    "app.evidence": "Underlag: {evidence}",
-    "level.1": "Nivå 1",
-    "level.2": "Nivå 2",
-    "status.warning": "Varning",
-    "status.unknown": "Kunde inte avgöra",
-    "status.auth_required": "Kräver utökad behörighet",
-    "status.pending": "Kontrollerar …",
-    "scan.pending": "Väntar på kontrollen.",
-    "check.firewall.title": "Brandvägg",
-    "check.firewall.description": "Kontrollerar UFW:s rapporterade status. Brandväggar som hanteras av andra verktyg bedöms inte.",
-    "check.updates.title": "Automatiska systemuppdateringar",
-    "check.updates.description": "Läser Uppdateringshanterarens automatiseringsinställning och APT:s inställningar för återkommande uppdateringar. Kontrollerar inte att alla säkerhetsfixar är installerade.",
-    "check.timeshift.title": "Timeshift",
-    "check.timeshift.description": "Läser Timeshifts inställningar och letar efter snapshots på standardplatsen. Snapshots bekräftar inte att en återställning fungerar, och Timeshift säkerhetskopierar inte personliga filer som standard.",
-    "check.access-control.title": "SELinux/AppArmor",
-    "check.access-control.description": "Kontrollerar SELinux enforcing-läge eller AppArmor-status och enforcing-profiler.",
-    "check.ssh.title": "SSH och fjärråtkomst",
-    "check.ssh.description": "Kontrollerar vanliga SSH-systemd-enheter. Andra fjärråtkomstmetoder ingår inte i prototypen.",
-    "check.clamav.title": "ClamAV",
-    "check.clamav.description": "Kontrollerar ClamAV-daemonen. ClamAV är inte ett generellt krav för alla datoranvändare.",
-    "check.screen-lock.title": "Skärmlås",
-    "check.screen-lock.description": "Kontrollerar skärmlåsinställningen i Cinnamon, MATE eller Xfce. Andra skrivbordsmiljöer kontrolleras inte.",
-    "check.bluetooth.title": "Bluetooth",
-    "check.bluetooth.description": "Läser rfkill-status. En oblockerad radio är inte i sig bevis på en säkerhetsrisk.",
-    "check.root-shell.title": "Root-shell vid uppstart",
-    "check.root-shell.description": "En säker och tillförlitlig kontroll för detta har ännu inte definierats.",
-    "check.full-disk-encryption.title": "Full diskkryptering",
-    "check.full-disk-encryption.description": "Följer rotfilsystemets blockenheter och letar efter en Linux crypt-mappning. Hårdvaru- och firmwarekryptering kontrolleras inte.",
-    "check.home-encryption.title": "Hemkatalogs- eller lokal kryptering",
-    "check.home-encryption.description": "Kontrollerar om din hemkatalog ligger bakom en Linux crypt-mappning eller använder eCryptfs. Annan filkryptering kontrolleras inte.",
-    "firewall.command_unavailable": "UFW kunde inte startas; verktyget kan saknas eller vara otillgängligt.",
-    "firewall.authorization_required": "UFW kräver administratörsbehörighet för att läsa den aktiva brandväggsstatusen.",
-    "firewall.status_unavailable": "UFW-status kunde inte läsas.",
-    "firewall.active": "UFW rapporterar att brandväggen är aktiv.",
-    "firewall.inactive": "UFW rapporterar att brandväggen är inaktiv.",
-    "firewall.unrecognized_status": "UFW gav en status som inte kunde tolkas.",
-    "updates.authorization_required": "Administratörsbehörighet krävs för att läsa APT:s uppdateringsinställningar.",
-    "updates.settings_unreadable": "APT:s uppdateringsinställningar kunde inte läsas.",
-    "updates.settings_unparseable": "APT:s uppdateringsinställningar kunde inte tolkas fullständigt.",
-    "updates.enabled": "APT är inställt på att hämta paketlistor och installera uppdateringar automatiskt.",
-    "updates.disabled": "APT:s automatiska uppdateringar verkar inte vara helt aktiverade.",
-    "updates.mintupdate_automation_enabled": "Uppdateringshanteraren är inställd på att installera uppdateringar automatiskt.",
-    "updates.mintupdate_automation_disabled": "Uppdateringshanterarens automatiska uppdateringar är avstängda. Uppdateringshanteraren kan fortfarande meddela dig om uppdateringar; automatiseringen kan slås på i dess inställningar under Automatisering.",
-    "timeshift.authorization_required": "Administratörsbehörighet krävs för att läsa Timeshift-snapshots.",
-    "timeshift.path_unreadable": "Timeshifts standardplats för snapshots kunde inte läsas.",
-    "timeshift.snapshots_found": "Hittade {count} snapshot-katalog(er), men kunde inte verifiera att återställning fungerar.",
-    "timeshift.no_snapshots_at_default_path": "Inga snapshots hittades på standardplatsen; en annan plats kan användas.",
-    "timeshift.not_configured": "Timeshifts inställningar visar att ingen plats för snapshots har valts ännu.",
-    "timeshift.configured_without_schedule": "Timeshift är konfigurerat, men inga schemalagda snapshots är aktiverade; snapshots görs bara manuellt.",
-    "timeshift.btrfs_scheduled": "Timeshift är konfigurerat med schemalagda Btrfs-snapshots. Snapshots räknades inte, och återställning verifierades inte.",
-    "timeshift.scheduled_on_separate_device": "Timeshift är konfigurerat med schemalagda snapshots på en separat enhet. Enheten kontrollerades inte, och återställning verifierades inte.",
-    "access_control.authorization_required": "Administratörsbehörighet krävs för att läsa säkerhetsmodulernas profiler.",
-    "access_control.selinux_enforcing": "SELinux är i enforcing-läge.",
-    "access_control.selinux_permissive": "SELinux är i permissive-läge.",
-    "access_control.status_unreadable": "SELinux-/AppArmor-status kunde inte läsas.",
-    "access_control.apparmor_enforcing": "AppArmor är aktivt med {count} profil(er) i enforcing-läge.",
-    "access_control.apparmor_disabled": "AppArmor rapporterar att det är inaktiverat.",
-    "access_control.apparmor_unconfirmed": "AppArmor-profiler i enforcing-läge kunde inte bekräftas.",
-    "ssh.status_unavailable": "SSH-tjänstens status kunde inte avgöras.",
-    "ssh.active": "En SSH-tjänst eller socket är aktiv; bedöm om fjärråtkomst behövs.",
-    "ssh.inactive": "Ingen av de kontrollerade SSH-enheterna är aktiv.",
-    "clamav.active_limited": "ClamAV-daemonen är aktiv; signaturernas aktualitet och genomsökning verifieras inte.",
-    "clamav.not_a_universal_requirement": "ClamAV är inte ett generellt krav; lämpligheten beror på hur datorn används.",
-    "screen_lock.settings_unavailable": "Skärmlås kunde inte kontrolleras via inställningarna för {desktop}.",
-    "screen_lock.desktop_not_supported": "Skrivbordsmiljön kunde inte identifieras som Cinnamon, MATE eller Xfce.",
-    "screen_lock.enabled": "{desktop} är inställt på att låsa skärmen.",
-    "screen_lock.disabled": "{desktop} rapporterar att skärmlås är inaktiverat.",
-    "screen_lock.unrecognized_result": "{desktop} gav ett skärmlåsvärde som inte kunde tolkas.",
-    "bluetooth.status_unavailable": "Bluetooth-status kunde inte läsas.",
-    "bluetooth.device_unreadable": "En Bluetooth-enhet kunde inte läsas.",
-    "bluetooth.no_radio_found": "Ingen Bluetooth-radio hittades via rfkill.",
-    "bluetooth.all_radios_blocked": "Alla hittade Bluetooth-radioenheter är blockerade.",
-    "bluetooth.unblocked_is_not_proof_of_risk": "Bluetooth är inte blockerad; det fastställer inte i sig någon säkerhetsrisk.",
-    "root_shell.check_not_implemented": "En säker och tillförlitlig kontroll av root-shell vid uppstart är inte definierad ännu.",
-    "encryption.root_status_unknown": "Kryptering av rotfilsystemet kunde inte avgöras.",
-    "encryption.root_crypt_mapping": "Rotfilsystemet ligger bakom en Linux crypt-mappning.",
-    "encryption.root_crypt_mapping_not_found": "Ingen Linux crypt-mappning hittades för rotfilsystemet.",
-    "encryption.home_status_unknown": "Kryptering av din hemkatalog kunde inte avgöras.",
-    "encryption.home_crypt_mapping": "Din hemkatalog ligger på ett filsystem bakom en Linux crypt-mappning.",
-    "encryption.home_crypt_mapping_not_found": "Ingen Linux crypt-mappning eller eCryptfs hittades för din hemkatalog.",
-    "encryption.home_ecryptfs": "Din hemkatalog är krypterad med eCryptfs.",
-    "check.unexpected_error": "Kontrollen kunde inte slutföras.",
-}
-
-
-def language_from_locale(locale_name: str | None = None) -> str:
-    if locale_name is None:
-        locale_name = (
-            os.environ.get("LC_ALL")
-            or os.environ.get("LC_MESSAGES")
-            or os.environ.get("LANGUAGE", "").split(":", maxsplit=1)[0]
-            or locale.getlocale(locale.LC_MESSAGES)[0]
-            or os.environ.get("LANG", "en")
-        )
-
-    language = (
-        locale_name.split(".", maxsplit=1)[0]
-        .split("@", maxsplit=1)[0]
-        .split("_", maxsplit=1)[0]
-        .split("-", maxsplit=1)[0]
-        .lower()
-    )
-    if language in {"sv", "ar"}:
-        return language
-    return "en"
-
-
-def translate(message_id: str, language: str, **values: str) -> str:
-    template = SWEDISH.get(message_id, ENGLISH.get(message_id, message_id)) if language == "sv" else ENGLISH.get(message_id, message_id)
+def translate(message_id: str, **values: str) -> str:
+    template = ENGLISH.get(message_id, message_id)
     try:
         return template.format(**values)
     except (KeyError, ValueError):

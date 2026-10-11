@@ -2,7 +2,6 @@
 Type=Application
 Name=MojitoShield
 Comment=Local security checks for Linux Mint
-Comment[sv]=Lokala säkerhetskontroller för Linux Mint
 Exec=mojitoshield
 Icon=org.mojitoshield.MojitoShield
 Terminal=false

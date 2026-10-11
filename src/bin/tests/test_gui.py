@@ -1,6 +1,5 @@
 """GTK smoke tests; skipped when no display is available."""
 
-import os
 import threading
 import time
 import unittest
@@ -62,7 +61,7 @@ class WindowSmokeTests(unittest.TestCase):
             )
             WindowSmokeTests.application.register(None)
 
-    def open_window(self, language: str, results: tuple[CheckResult, ...], release=None):
+    def open_window(self, results: tuple[CheckResult, ...], release=None):
         application = self.application
 
         def run_checks():
@@ -78,7 +77,7 @@ class WindowSmokeTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        window = gui.MojitoShieldWindow(application, language)
+        window = gui.MojitoShieldWindow(application)
         self.addCleanup(window.destroy)
         return window
 
@@ -86,21 +85,21 @@ class WindowSmokeTests(unittest.TestCase):
         return window._refresh_action.get_enabled()
 
     def test_window_lists_all_checks_in_one_keyboard_navigable_list(self):
-        window = self.open_window("sv", fake_results())
+        window = self.open_window(fake_results())
         self.assertTrue(wait_until(lambda: self.scan_finished(window)))
 
         rows = window.check_list.get_children()
         self.assertEqual(len(rows), 11)
         self.assertEqual([row.check.level for row in rows], [1] * 8 + [2] * 3)
         headers = [row.get_header() for row in rows if row.get_header() is not None]
-        self.assertEqual([header.get_text() for header in headers], ["Nivå 1", "Nivå 2"])
+        self.assertEqual([header.get_text() for header in headers], ["Level 1", "Level 2"])
         self.assertEqual(window.check_list.get_selected_row().check.check_id, "firewall")
-        self.assertEqual(window.detail_title.get_text(), "Brandvägg")
-        self.assertEqual(rows[0].get_accessible().get_name(), "Brandvägg: OK")
+        self.assertEqual(window.detail_title.get_text(), "Firewall")
+        self.assertEqual(rows[0].get_accessible().get_name(), "Firewall: OK")
 
     def test_rows_show_checking_until_results_arrive(self):
         release = threading.Event()
-        window = self.open_window("en", fake_results(), release)
+        window = self.open_window(fake_results(), release)
         wait_until(lambda: False, timeout=0.1)
 
         first_row = window.check_list.get_children()[0]
@@ -112,7 +111,7 @@ class WindowSmokeTests(unittest.TestCase):
         self.assertEqual(first_row.status_label.get_text(), "OK")
 
     def test_scan_is_not_called_complete_while_permission_is_missing(self):
-        window = self.open_window("en", fake_results(frozenset({"firewall"})))
+        window = self.open_window(fake_results(frozenset({"firewall"})))
         self.assertTrue(wait_until(lambda: self.scan_finished(window)))
 
         summary = window.summary_label.get_text()
@@ -123,37 +122,11 @@ class WindowSmokeTests(unittest.TestCase):
         self.assertEqual(window.extended_button.get_label(), "Extended scan (not installed)")
 
     def test_complete_scan_hides_extended_scan(self):
-        window = self.open_window("en", fake_results())
+        window = self.open_window(fake_results())
         self.assertTrue(wait_until(lambda: self.scan_finished(window)))
 
         self.assertTrue(window.summary_label.get_text().startswith("Scan complete"))
         self.assertFalse(window.extended_button.get_visible())
-
-
-@unittest.skipUnless(GTK_AVAILABLE, "GTK display not available")
-class LocaleDirectionTests(unittest.TestCase):
-    def tearDown(self):
-        Gtk.Widget.set_default_direction(Gtk.TextDirection.LTR)
-
-    def test_arabic_locale_uses_right_to_left_layout(self):
-        with (
-            patch.dict(os.environ, {"LC_ALL": "ar_EG.UTF-8"}),
-            patch("mojitoshield.locale.setlocale"),
-        ):
-            language = gui.configure_locale()
-
-        self.assertEqual(language, "ar")
-        self.assertEqual(Gtk.Widget.get_default_direction(), Gtk.TextDirection.RTL)
-
-    def test_swedish_locale_keeps_left_to_right_layout(self):
-        with (
-            patch.dict(os.environ, {"LC_ALL": "sv_SE.UTF-8"}),
-            patch("mojitoshield.locale.setlocale"),
-        ):
-            language = gui.configure_locale()
-
-        self.assertEqual(language, "sv")
-        self.assertEqual(Gtk.Widget.get_default_direction(), Gtk.TextDirection.LTR)
 
 
 if __name__ == "__main__":

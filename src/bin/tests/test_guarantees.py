@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from mojitoshield_core import CHECKS, SCREEN_LOCK_SETTINGS, Status
-from mojitoshield_i18n import ENGLISH, SWEDISH
+from mojitoshield_i18n import ENGLISH
 
 
 SOURCE_ROOT = Path(__file__).parents[1]
@@ -62,21 +62,17 @@ class TranslationCatalogTests(unittest.TestCase):
         message_ids |= {f"status.{status.value}" for status in Status}
         return message_ids
 
-    def test_every_result_message_has_english_and_swedish_text(self):
+    def test_every_result_message_has_catalog_text(self):
         message_ids = self.analysis_message_ids()
         self.assertGreater(len(message_ids), 40)
         for message_id in sorted(message_ids):
             with self.subTest(message_id=message_id):
                 self.assertTrue(message_id in ENGLISH, message_id)
-                self.assertTrue(message_id in SWEDISH, message_id)
 
-    def test_every_interface_text_has_english_and_swedish_text(self):
+    def test_every_interface_message_has_catalog_text(self):
         for message_id in sorted(self.interface_message_ids()):
             with self.subTest(message_id=message_id):
                 self.assertTrue(message_id in ENGLISH, message_id)
-                # Identical words such as "OK" and the app name may fall back to English.
-                if message_id not in {"status.ok", "app.title"}:
-                    self.assertTrue(message_id in SWEDISH, message_id)
 
     def test_every_check_has_title_and_description(self):
         for definition in CHECKS:
@@ -84,15 +80,11 @@ class TranslationCatalogTests(unittest.TestCase):
                 key = f"check.{definition.check_id}.{part}"
                 with self.subTest(key=key):
                     self.assertTrue(key in ENGLISH, key)
-                    self.assertTrue(key in SWEDISH, key)
 
-    def test_swedish_texts_use_the_same_placeholders(self):
-        for key, swedish in SWEDISH.items():
-            with self.subTest(key=key):
-                self.assertEqual(
-                    set(re.findall(r"{(\w+)}", swedish)),
-                    set(re.findall(r"{(\w+)}", ENGLISH[key])),
-                )
+    def test_catalog_has_no_unused_result_messages(self):
+        used = self.analysis_message_ids() | self.interface_message_ids()
+        used |= {f"check.{definition.check_id}.{part}" for definition in CHECKS for part in ("title", "description")}
+        self.assertEqual(sorted(set(ENGLISH) - used), [])
 
 
 class OfflineAndReadOnlyTests(unittest.TestCase):

@@ -14,7 +14,7 @@ from mojitoshield_core import (
     parse_apt_auto_updates,
     run_privileged_checks,
 )
-from mojitoshield_i18n import language_from_locale, translate
+from mojitoshield_i18n import translate
 
 
 class DistributionTests(unittest.TestCase):
@@ -151,13 +151,8 @@ class ResultTests(unittest.TestCase):
         is_available.assert_not_called()
 
     def test_status_presentation_is_selected_outside_the_analysis_core(self):
-        self.assertEqual(translate("status.auth_required", "sv"), "Kräver utökad behörighet")
-        self.assertEqual(translate("status.auth_required", "en"), "Requires extended permission")
-
-    def test_desktop_locale_selects_language_and_has_english_fallback(self):
-        self.assertEqual(language_from_locale("sv_SE.UTF-8"), "sv")
-        self.assertEqual(language_from_locale("ar_EG.UTF-8"), "ar")
-        self.assertEqual(language_from_locale("de_DE.UTF-8"), "en")
+        self.assertEqual(translate("status.auth_required"), "Requires extended permission")
+        self.assertEqual(translate("unknown.message_id"), "unknown.message_id")
 
 if __name__ == "__main__":
     unittest.main()
