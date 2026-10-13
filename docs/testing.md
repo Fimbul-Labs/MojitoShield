@@ -60,18 +60,18 @@ Do not install updates. The test is about what a fresh installation looks like.
 
 **4. Shut the VM down** from the Mint menu.
 
-**5. Add the shared folder.** In virt-manager, open the VM and click the light-bulb icon (*Show virtual hardware details*):
+**5. Add the shared folder.** In virt-manager, open the VM and choose *View → Details* (in some versions a light-bulb or "i" icon in the toolbar):
 
 1. *Memory*: tick **Enable shared memory**, then *Apply*.
 2. *Add Hardware* → *Filesystem*: Driver **virtiofs**, Source path `/home/YOUR-USER-NAME/mojitoshield-vm`, Target path `mojitoshield`. Click *Finish*.
 
-**6. Take a snapshot.** A snapshot saves the VM's state, so every test can start from the same fresh system. With the VM still shut down, click the *Manage VM snapshots* icon (the last icon in the toolbar), then *+*, and name it `fresh-install`.
+**6. Take a snapshot.** A snapshot saves the VM's state, so every test can start from the same fresh system. With the VM still shut down, choose *View → Snapshots* (or the last icon in the toolbar), then *+*, and name it `fresh-install`.
 
 Always take and restore snapshots while the VM is shut down; a running VM with a shared folder cannot be snapshotted.
 
 ## Test run (once per edition and release)
 
-First restore the fresh system: with the VM shut down, open *Manage VM snapshots*, select `fresh-install` and click *Run selected snapshot* (the ▶ button under the list). If the VM does not start by itself, click *Power on*. Log in and open a terminal.
+First restore the fresh system: with the VM shut down, choose *View → Snapshots*, select `fresh-install` and click *Run selected snapshot* (the ▶ button under the list). If the VM does not start by itself, click *Power on*. Log in and open a terminal.
 
 **1. Open the shared folder:**
 
@@ -135,7 +135,7 @@ Close and start MojitoShield again. *Firewall* should show *Requires extended pe
 - Click **Extended scan** and enter the password. Firewall should now show a result.
 - Restart the app, click **Extended scan** again and click **Cancel**. Firewall should keep *Requires extended permission*, and the summary must not say the scan is complete.
 
-**9. Test without network.** In virt-manager, open the light-bulb view, choose the network card (*NIC*), untick **Link state: active** and click *Apply*. Restart MojitoShield: it should work as before.
+**9. Test without network.** In virt-manager, choose *View → Details*, then the network card (*NIC*), untick **Link state: active** and click *Apply*. (Turning off networking inside the VM works too.) Restart MojitoShield: it should work as before.
 
 **10. Finish.** Shut the VM down. The next test run starts by restoring the snapshot, so the changes from this run disappear.
 
