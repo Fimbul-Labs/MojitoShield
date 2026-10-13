@@ -8,6 +8,8 @@ Run it once on each Linux Mint edition and save the output as test data:
 NAME is the edition, for example mint-22.3-xfce. The output only contains
 system facts that are the same for every user of an edition: os-release
 fields, the desktop, settings values, command results and which files exist.
+For the planned "System up to date" rules it also records the pending
+upgrades, the package lists' dates and a summary of each APT history entry.
 It never contains user names, file contents, addresses or device names.
 """
 
@@ -16,8 +18,9 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from mojitoshield import system
@@ -32,7 +35,10 @@ from mojitoshield.checks import (
     updates,
 )
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+APT_LISTS = Path("/var/lib/apt/lists")
+RELEASE_FIELDS = ("Origin", "Suite", "Date")
+HISTORY_COUNTED_ACTIONS = ("Install", "Upgrade", "Remove", "Purge")
 OS_RELEASE_FIELDS = ("ID", "ID_LIKE", "NAME", "PRETTY_NAME", "VERSION_ID", "VERSION_CODENAME")
 
 # The checks decide from whether these exist, not from what they contain.
@@ -65,6 +71,8 @@ def service_commands() -> list[list[str]]:
     return [
         ["systemctl", "is-active", "ufw"],
         ["systemctl", "is-enabled", updates.MINTUPDATE_UPGRADE_TIMER],
+        # Simulated: lists pending upgrades and their archives without changing anything.
+        ["apt-get", "-s", "dist-upgrade"],
     ]
 
 
@@ -103,6 +111,57 @@ def apparmor_enabled() -> str | None:
         return None
 
 
+def package_lists() -> dict[str, dict[str, str]]:
+    """The date fields of each repository's Release file, and when it changed on disk."""
+    lists = {}
+    for path in sorted(APT_LISTS.glob("*Release")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+        except OSError:
+            continue
+        if text.startswith("-----BEGIN PGP SIGNED MESSAGE-----"):
+            # A signed InRelease file: the fields start after the signature header.
+            text = text.partition("\n\n")[2]
+        fields = {}
+        for line in text.splitlines():
+            if not line.strip() or line.startswith(" "):
+                break
+            name, _, value = line.partition(":")
+            if name in RELEASE_FIELDS:
+                fields[name] = value.strip()
+        fields["modified"] = modified.isoformat(timespec="seconds")
+        lists[path.name] = fields
+    return lists
+
+
+def history_entries() -> list[dict[str, object]]:
+    """One summary per APT history entry: when, which tool, and how many packages changed.
+
+    Only the first two words of the command line are kept, so local file paths
+    and user names in Requested-By never leave the system.
+    """
+    entries = []
+    for history in updates._read_apt_history():
+        for block in re.split(r"\n\s*\n", history):
+            fields = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+            if "Start-Date" not in fields:
+                continue
+            entries.append(
+                {
+                    "start": " ".join(fields["Start-Date"].split()),
+                    "command": " ".join(fields.get("Commandline", "").split()[:2]),
+                    "requested_by_user": "Requested-By" in fields,
+                    **{
+                        action.lower(): len(re.findall(r"\)(?:, |$)", fields[action]))
+                        for action in HISTORY_COUNTED_ACTIONS
+                        if action in fields
+                    },
+                }
+            )
+    return sorted(entries, key=lambda entry: entry["start"])
+
+
 def collect() -> dict[str, object]:
     return {
         "format": FORMAT_VERSION,
@@ -116,6 +175,8 @@ def collect() -> dict[str, object]:
             command_record(arguments)
             for arguments in [*screen_lock_commands(), *service_commands()]
         ],
+        "package_lists": package_lists(),
+        "apt_history": history_entries(),
     }
 
 
