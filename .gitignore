@@ -1,9 +1,3 @@
-# Private working notes, kept out of the public repository.
-notes/
-
-# Linux Mint installation images for test machines.
-Mint-distros/
-
 # Python and tool caches.
 __pycache__/
 *.pyc
