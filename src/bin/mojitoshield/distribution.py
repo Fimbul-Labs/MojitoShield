@@ -15,7 +15,7 @@ def identify_distribution(release: Mapping[str, str]) -> bool:
     if distribution_id == "linuxmint":
         return True
 
-    return "lmde" in name or "lmde" in pretty_name or ("linux mint debian edition" in pretty_name)
+    return "lmde" in name or "lmde" in pretty_name or "linux mint debian edition" in pretty_name
 
 
 def current_distribution() -> tuple[bool, str | None]:

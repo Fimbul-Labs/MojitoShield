@@ -14,9 +14,9 @@ from mojitoshield.privileged import (
     PKEXEC_PATH,
     PRIVILEGED_CHECK_IDS,
     PRIVILEGED_HELPER_PATH,
-    PrivilegedHelperUnavailable,
+    PrivilegedHelperUnavailableError,
     PrivilegedScanCancelled,
-    PrivilegedScanFailed,
+    PrivilegedScanFailedError,
     is_trusted_system_path,
     parse_helper_output,
     run_privileged_checks,
@@ -201,7 +201,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 self.subTest(failure=failure),
                 patch("mojitoshield.privileged.privileged_helper_available", return_value=True),
                 patch("mojitoshield.privileged.subprocess.run", **failure),
-                self.assertRaises(PrivilegedScanFailed),
+                self.assertRaises(PrivilegedScanFailedError),
             ):
                 run_privileged_checks(("firewall",))
 
@@ -209,7 +209,7 @@ class PrivilegedHelperTests(unittest.TestCase):
         with (
             patch("mojitoshield.privileged.privileged_helper_available", return_value=False),
             patch("mojitoshield.privileged.subprocess.run") as run,
-            self.assertRaises(PrivilegedHelperUnavailable),
+            self.assertRaises(PrivilegedHelperUnavailableError),
         ):
             run_privileged_checks(("firewall",))
         run.assert_not_called()
@@ -262,7 +262,7 @@ class HelperAnswerTests(unittest.TestCase):
         output = self.answer(
             {"check_id": "timeshift", "status": "unknown", "message_id": "timeshift.unknown"}
         )
-        with self.assertRaises(PrivilegedScanFailed):
+        with self.assertRaises(PrivilegedScanFailedError):
             parse_helper_output(("firewall",), output)
 
     def test_unallowlisted_check_is_rejected_before_authentication(self):

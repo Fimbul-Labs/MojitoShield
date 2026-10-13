@@ -45,7 +45,7 @@ def mount_encryption(target: str) -> MountEncryption:
     source = fields.get("SOURCE", "")
     filesystem_type = fields.get("FSTYPE", "").lower()
     if not source:
-        return MountEncryption(None, "mount_source_unreadable")
+        return MountEncryption(None, "")
 
     device = block_device_from_mount_source(source)
     # lsblk --inverse lists the device and every device below it, such as LVM, crypt and disk.

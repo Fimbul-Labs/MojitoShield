@@ -1,6 +1,6 @@
 # MojitoShield
 
-MojitoShield is a local, offline GTK app for Linux Mint that checks and explains a number of basic security conditions. This README is the project's product definition and the instructions for developers and future coding assistants.
+MojitoShield is a local, offline GTK app for Linux Mint that checks and explains a number of basic security conditions. This README is the project's product definition and a guide for contributors.
 
 ## Vision
 
@@ -137,9 +137,28 @@ The code style is set in `ruff.toml`. Check and format the code from the project
 
 The prototype shows the 9 checks in two levels. The basic scan is language-independent and runs without sudo. Extended checks become available only from a trusted, installed Debian package; they cannot be run safely directly from a writable project directory. The prototype is not a finished security audit. The Debian package builds and installs on Linux Mint 22.3, and a fresh Mint 22.3 Cinnamon installation has been tested in a virtual machine; other editions are not tested yet (see `docs/testing.md`).
 
-## Instructions for developers and coding assistants
+## Tested editions
 
-Implement the plan step by step. Start by specifying and testing the check contracts before claiming that the app can detect a risk. Prioritise safe and explainable diagnostics over more features. Keep offline operation, Mint integration, the two checklist levels and all security boundaries in this document. Do not add report/export, password testing or automatic system changes without first changing the product definition.
+MojitoShield is an early prototype. Only the screen-lock check depends on the desktop; the other checks read things that are the same on every edition, but each edition still needs a real test.
+
+| Edition | Status |
+|---|---|
+| Linux Mint 22.3 Cinnamon | Tested: a fresh installation in a virtual machine (version 0.1.2), and in daily use |
+| Linux Mint 22.3 Xfce | Not tested yet; help wanted |
+| Linux Mint 22.3 MATE | Not tested yet; help wanted |
+| LMDE 7 | Not tested yet; help wanted |
+| Linux Mint 21.x | Should work, not tested; help wanted |
+| Linux Mint 20 and older | Not supported: the app needs Python 3.10 |
+
+On a fresh Xfce installation the screen-lock check may report *Could not determine*, because Xfce only stores settings that were changed from their defaults. Data from a real Xfce system will settle what the default is.
+
+### Help with testing
+
+Testing an edition takes about an hour in a virtual machine and changes nothing on your own computer. `docs/testing.md` describes every step, including a small data collector that records only system facts (no names, addresses or file contents). Results, the collected file and anything that looked wrong are welcome as an issue at https://github.com/Fimbul-Labs/MojitoShield/issues.
+
+## Guidelines for contributors
+
+Change things step by step. Start by specifying and testing the check contracts before claiming that the app can detect a risk. Prioritise safe and explainable diagnostics over more features. Keep offline operation, Mint integration, the two checklist levels and all security boundaries in this document. Do not add report/export, password testing or automatic system changes without first changing the product definition.
 
 ## Licence
 

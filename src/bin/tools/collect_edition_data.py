@@ -59,7 +59,7 @@ PRESENCE_PATHS = (
 
 
 def screen_lock_commands() -> list[list[str]]:
-    """Every screen-lock query, for all desktops, so one file covers what any desktop would read."""
+    """Return the screen-lock queries of all desktops, so one file covers any desktop."""
     commands = []
     for settings in screen_lock.SCREEN_LOCK_SETTINGS.values():
         commands.extend([settings.lock_query, settings.idle_delay_query])
@@ -112,7 +112,7 @@ def apparmor_enabled() -> str | None:
 
 
 def package_lists() -> dict[str, dict[str, str]]:
-    """The date fields of each repository's Release file, and when it changed on disk."""
+    """Return the date fields of each repository's Release file, and when it changed on disk."""
     lists = {}
     for path in sorted(APT_LISTS.glob("*Release")):
         try:
@@ -120,34 +120,26 @@ def package_lists() -> dict[str, dict[str, str]]:
             modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
         except OSError:
             continue
-        if text.startswith("-----BEGIN PGP SIGNED MESSAGE-----"):
-            # A signed InRelease file: the fields start after the signature header.
-            text = text.partition("\n\n")[2]
-        fields = {}
-        for line in text.splitlines():
-            if not line.strip() or line.startswith(" "):
-                break
-            name, _, value = line.partition(":")
-            if name in RELEASE_FIELDS:
-                fields[name] = value.strip()
+        header = updates.release_fields(text)
+        fields = {name: header[name] for name in RELEASE_FIELDS if name in header}
         fields["modified"] = modified.isoformat(timespec="seconds")
         lists[path.name] = fields
     return lists
 
 
 def installation_finished() -> str | None:
-    finished = updates._installation_finished()
+    finished = updates.installation_finished()
     return None if finished is None else finished.isoformat(timespec="seconds")
 
 
 def history_entries() -> list[dict[str, object]]:
-    """One summary per APT history entry: when, which tool, and how many packages changed.
+    """Return one summary per APT history entry: when, which tool, how many packages changed.
 
     Only the first two words of the command line are kept, so local file paths
     and user names in Requested-By never leave the system.
     """
     entries = []
-    for history in updates._read_apt_history():
+    for history in updates.read_apt_history():
         for block in re.split(r"\n\s*\n", history):
             fields = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
             if "Start-Date" not in fields:

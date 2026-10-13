@@ -112,24 +112,33 @@ def count_pending_security_updates(simulation: str) -> int:
     )
 
 
-def release_date(text: str) -> datetime | None:
-    """Return the Date field of a Release or InRelease file, in local time without a zone."""
+def release_fields(text: str) -> dict[str, str]:
+    """Return the single-line header fields of a Release or InRelease file."""
     if text.startswith("-----BEGIN PGP SIGNED MESSAGE-----"):
         # A signed InRelease file: the fields start after the signature header.
         text = text.partition("\n\n")[2]
+    fields = {}
     for line in text.splitlines():
-        if not line.strip():
+        # The header ends at the first blank line or the first multi-line field.
+        if not line.strip() or line.startswith(" "):
             break
-        if line.startswith("Date:"):
-            try:
-                # As naive local time, like system.now().
-                return datetime.fromtimestamp(parsedate_to_datetime(line[5:].strip()).timestamp())
-            except (TypeError, ValueError):
-                return None
-    return None
+        name, _, value = line.partition(":")
+        fields[name] = value.strip()
+    return fields
 
 
-def _read_apt_history() -> list[str]:
+def release_date(text: str) -> datetime | None:
+    """Return the Date field of a Release or InRelease file, in local time without a zone."""
+    try:
+        published = parsedate_to_datetime(release_fields(text)["Date"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    # As naive local time, like system.now().
+    return datetime.fromtimestamp(published.timestamp())
+
+
+def read_apt_history() -> list[str]:
+    """Return the text of the current and the previous APT history log, where readable."""
     histories = []
     for path in APT_HISTORY_LOGS:
         try:
@@ -199,7 +208,8 @@ def _security_lists_date() -> datetime | None:
     return newest
 
 
-def _installation_finished() -> datetime | None:
+def installation_finished() -> datetime | None:
+    """Return when the installer finished, from the time of its log folder."""
     try:
         return datetime.fromtimestamp(INSTALLER_LOGS.stat().st_mtime)
     except OSError:
@@ -242,18 +252,21 @@ def check() -> Outcome:
     if pending == 0:
         return Outcome(Status.OK, "updates.no_security_updates_pending", evidence)
 
-    installed = _installation_finished()
+    installed = installation_finished()
     update_times = [
         moment
-        for history in _read_apt_history()
+        for history in read_apt_history()
         if (moment := latest_full_update(history, installed)) is not None
     ]
-    data = {"count": str(pending)}
     if not update_times:
         return Outcome(
-            Status.WARNING, "updates.security_updates_pending_no_update", evidence, data
+            Status.WARNING,
+            "updates.security_updates_pending_no_update",
+            evidence,
+            {"count": str(pending)},
         )
-    data["days"] = str(int(system.days_since(max(update_times))))
-    if int(data["days"]) <= SECURITY_UPDATES_MAX_AGE_DAYS:
+    days = int(system.days_since(max(update_times)))
+    data = {"count": str(pending), "days": str(days)}
+    if days <= SECURITY_UPDATES_MAX_AGE_DAYS:
         return Outcome(Status.OK, "updates.security_updates_recent", evidence, data)
     return Outcome(Status.WARNING, "updates.security_updates_pending", evidence, data)

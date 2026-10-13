@@ -35,7 +35,14 @@ mkdir -p ~/mojitoshield-vm
 git archive HEAD:src/bin --prefix=mojitoshield-source/ --output ~/mojitoshield-vm/mojitoshield-source.tar.gz
 ```
 
-Then build the package as described under "Working notes" in `progress.md`, and copy `mojitoshield_*_all.deb` into `~/mojitoshield-vm`.
+Then build the package from a clean copy, so no build files end up in the project folder (this needs `sudo apt install debhelper`), and copy it into the shared folder:
+
+```sh
+mkdir -p /tmp/mojitoshield-build
+git archive HEAD:src/bin --prefix=mojitoshield/ | tar -x -C /tmp/mojitoshield-build
+(cd /tmp/mojitoshield-build/mojitoshield && dpkg-buildpackage -us -uc -b)
+cp /tmp/mojitoshield-build/mojitoshield_*_all.deb ~/mojitoshield-vm/
+```
 
 ## Creating a VM (once per edition)
 
@@ -141,5 +148,10 @@ Close and start MojitoShield again. *Firewall* should show *Requires extended pe
 
 ## After the test
 
-- Tell the developer (or the coding assistant) which `.json` files are new in `~/mojitoshield-vm`, and give the real screen-lock setting from step 3. The file is then copied to `src/bin/tests/data/editions/`, and the confirmed result goes into `EXPECTED` in `src/bin/tests/test_editions.py`.
-- Write a short result per edition in `progress.md`: which steps passed and anything that looked wrong.
+Open an issue at https://github.com/Fimbul-Labs/MojitoShield/issues with:
+
+- the edition and version, and the MojitoShield version;
+- the results table from step 6, and anything that looked wrong in the other steps;
+- the `.json` file from step 2 and the real screen-lock setting from step 3. The file only holds system facts (see the top of `src/bin/tools/collect_edition_data.py`); read it before attaching it if you want to be sure.
+
+The file is then added to `src/bin/tests/data/editions/`, with the confirmed result in `EXPECTED` in `src/bin/tests/test_editions.py`, so later changes are checked against that edition.

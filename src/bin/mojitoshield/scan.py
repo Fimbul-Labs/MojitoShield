@@ -47,7 +47,7 @@ CHECKS = (
 
 
 def run_check(definition: CheckDefinition) -> CheckResult:
-    """Run one check; an unexpected error gives Could not determine instead of stopping the scan."""
+    """Run one check; an unexpected error gives Could not determine, not a stopped scan."""
     try:
         outcome = definition.run()
     except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:

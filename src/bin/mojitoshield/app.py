@@ -187,7 +187,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         header.pack_end(refresh_button)
 
     def _build_summary(self) -> Gtk.Widget:
-        """The summary line, with the Extended scan button next to it when a check needs it."""
+        """Build the summary line, with the Extended scan button for checks that need it."""
         summary = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.summary_label = Gtk.Label()
         self.summary_label.set_xalign(0)
@@ -278,13 +278,14 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         row.set_header(heading)
 
     def _adapt_layout(self, _widget, allocation) -> None:
-        """Stack the list and the details in narrow windows, and put them side by side otherwise."""
+        """Stack the list and the details in narrow windows; put them side by side in wide ones."""
         orientation = (
             Gtk.Orientation.VERTICAL
             if allocation.width < NARROW_WINDOW_WIDTH
             else Gtk.Orientation.HORIZONTAL
         )
-        # Set the split on first layout and on orientation changes; keep the user's drags otherwise.
+        # Set the split on first layout and on orientation changes;
+        # otherwise keep where the user dragged it.
         if orientation == self._layout_orientation:
             return
         self._layout_orientation = orientation

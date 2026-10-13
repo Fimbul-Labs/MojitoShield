@@ -12,16 +12,23 @@ from collections.abc import Callable
 from pathlib import Path
 
 UFW_EXECUTABLE = Path("/usr/sbin/ufw")
+UFW_TIMEOUT_SECONDS = 5
 GRUB_CONFIGS = (Path("/boot/grub/grub.cfg"), Path("/boot/grub/custom.cfg"))
+MAX_EVIDENCE_LENGTH = 120
+# Below the app's limit (privileged.MAX_HELPER_OUTPUT_BYTES), so a valid answer always fits.
+MAX_OUTPUT_BYTES = 12_000
+
+
+def _result(check_id: str, status: str, message_id: str, evidence: str = "") -> dict[str, object]:
+    result: dict[str, object] = {"check_id": check_id, "status": status, "message_id": message_id}
+    if evidence:
+        result["evidence"] = evidence[:MAX_EVIDENCE_LENGTH]
+    return result
 
 
 def _firewall() -> dict[str, object]:
     if not UFW_EXECUTABLE.is_file():
-        return {
-            "check_id": "firewall",
-            "status": "unknown",
-            "message_id": "firewall.command_unavailable",
-        }
+        return _result("firewall", "unknown", "firewall.command_unavailable")
 
     try:
         command = subprocess.run(
@@ -35,14 +42,10 @@ def _firewall() -> dict[str, object]:
                 "LANGUAGE": "C",
                 "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
             },
-            timeout=5,
+            timeout=UFW_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
-        return {
-            "check_id": "firewall",
-            "status": "unknown",
-            "message_id": "firewall.status_unavailable",
-        }
+        return _result("firewall", "unknown", "firewall.status_unavailable")
 
     status_line = next(
         (
@@ -53,25 +56,15 @@ def _firewall() -> dict[str, object]:
         "",
     )
     if command.returncode == 0 and status_line == "status: active":
-        status = "ok"
-        message_id = "firewall.active"
-    elif command.returncode == 0 and status_line == "status: inactive":
-        status = "warning"
-        message_id = "firewall.inactive"
-    else:
-        status = "unknown"
-        message_id = "firewall.unrecognized_status"
-
-    return {
-        "check_id": "firewall",
-        "status": status,
-        "message_id": message_id,
-        "evidence": status_line[:120],
-    }
+        return _result("firewall", "ok", "firewall.active", status_line)
+    if command.returncode == 0 and status_line == "status: inactive":
+        return _result("firewall", "warning", "firewall.inactive", status_line)
+    return _result("firewall", "unknown", "firewall.unrecognized_status", status_line)
 
 
 def _grub_password_configured(text: str) -> bool:
-    # Same rule as mojitoshield.checks.boot_menu.grub_password_configured; the helper imports nothing from the app.
+    # Same rule as mojitoshield.checks.boot_menu.grub_password_configured;
+    # the helper deliberately imports nothing from the app.
     lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
     superusers = any(
         re.match(r"""^set\s+superusers\s*=\s*["']?[^"'\s]+""", line) for line in lines
@@ -88,26 +81,14 @@ def _boot_menu() -> dict[str, object]:
         except FileNotFoundError:
             continue
         except OSError:
-            return {
-                "check_id": "boot-menu",
-                "status": "unknown",
-                "message_id": "boot_menu.config_unreadable",
-            }
+            return _result("boot-menu", "unknown", "boot_menu.config_unreadable")
 
     if not texts:
-        return {
-            "check_id": "boot-menu",
-            "status": "unknown",
-            "message_id": "boot_menu.grub_not_used",
-        }
+        return _result("boot-menu", "unknown", "boot_menu.grub_not_used")
     # Only the conclusion leaves the helper, never lines from the boot configuration.
     if _grub_password_configured("\n".join(texts)):
-        return {"check_id": "boot-menu", "status": "ok", "message_id": "boot_menu.password_active"}
-    return {
-        "check_id": "boot-menu",
-        "status": "warning",
-        "message_id": "boot_menu.password_not_active",
-    }
+        return _result("boot-menu", "ok", "boot_menu.password_active")
+    return _result("boot-menu", "warning", "boot_menu.password_not_active")
 
 
 CHECKS: dict[str, Callable[[], dict[str, object]]] = {
@@ -129,7 +110,7 @@ def main(arguments: list[str]) -> int:
         # Running as root, the helper reports only "failed", never error details.
         return 1
 
-    if len(output.encode("utf-8")) > 12_000:
+    if len(output.encode("utf-8")) > MAX_OUTPUT_BYTES:
         return 1
     sys.stdout.write(output + "\n")
     return 0

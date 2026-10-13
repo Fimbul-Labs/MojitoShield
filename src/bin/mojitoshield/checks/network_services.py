@@ -108,9 +108,9 @@ def _ssh_config_lines(path: Path, depth: int = 0) -> list[str]:
         if depth >= SSH_INCLUDE_MAX_DEPTH:
             continue
         for pattern in include.group(1).split():
-            if not pattern.startswith("/"):
-                pattern = str(SSH_CONFIG.parent / pattern)
-            for included in sorted(glob.glob(pattern)):
+            # Relative Include paths are relative to /etc/ssh, as in sshd.
+            absolute = pattern if pattern.startswith("/") else str(SSH_CONFIG.parent / pattern)
+            for included in sorted(glob.glob(absolute)):
                 lines.extend(_ssh_config_lines(Path(included), depth + 1))
     return lines
 
@@ -149,7 +149,8 @@ def _listening_ports() -> set[int] | None:
     if not readable:
         return None
 
-    # Services only on internal bridges are reachable from local virtual machines, not other computers.
+    # Services only on internal bridges are reachable from local virtual machines,
+    # not from other computers.
     internal = _internal_bridge_addresses() if sockets else set()
     return {port for address, port in sockets if address not in internal}
 

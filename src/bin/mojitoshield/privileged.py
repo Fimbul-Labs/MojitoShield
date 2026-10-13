@@ -35,7 +35,7 @@ class PrivilegedScanError(Exception):
     """Base exception for the optional privileged scan."""
 
 
-class PrivilegedHelperUnavailable(PrivilegedScanError):
+class PrivilegedHelperUnavailableError(PrivilegedScanError):
     """Raised when the trusted packaged helper cannot be used."""
 
 
@@ -43,7 +43,7 @@ class PrivilegedScanCancelled(PrivilegedScanError):
     """Raised when the user cancels the system authorization dialog."""
 
 
-class PrivilegedScanFailed(PrivilegedScanError):
+class PrivilegedScanFailedError(PrivilegedScanError):
     """Raised when the helper fails or returns an invalid response."""
 
 
@@ -105,33 +105,33 @@ def _valid_helper_entry(entry: dict) -> bool:
 
 
 def parse_helper_output(requested_ids: tuple[str, ...], output: str) -> tuple[CheckResult, ...]:
-    """Turn the helper's JSON answer into results, or raise PrivilegedScanFailed."""
+    """Turn the helper's JSON answer into results, or raise PrivilegedScanFailedError."""
     if len(output.encode("utf-8")) > MAX_HELPER_OUTPUT_BYTES:
-        raise PrivilegedScanFailed("helper_response_too_large")
+        raise PrivilegedScanFailedError("helper_response_too_large")
 
     try:
         payload = json.loads(output)
     except (json.JSONDecodeError, UnicodeError) as error:
-        raise PrivilegedScanFailed("helper_response_invalid_json") from error
+        raise PrivilegedScanFailedError("helper_response_invalid_json") from error
 
     if not isinstance(payload, dict) or payload.get("version") != 1:
-        raise PrivilegedScanFailed("helper_response_unknown_version")
+        raise PrivilegedScanFailedError("helper_response_unknown_version")
 
     entries = payload.get("results")
     if not isinstance(entries, list) or len(entries) != len(requested_ids):
-        raise PrivilegedScanFailed("helper_response_missing_results")
+        raise PrivilegedScanFailedError("helper_response_missing_results")
 
     definitions = {definition.check_id: definition for definition in CHECKS}
     results: dict[str, CheckResult] = {}
     for entry in entries:
         if not isinstance(entry, dict):
-            raise PrivilegedScanFailed("helper_response_invalid_result")
+            raise PrivilegedScanFailedError("helper_response_invalid_result")
 
         check_id = entry.get("check_id")
         if check_id not in requested_ids or check_id in results:
-            raise PrivilegedScanFailed("helper_response_unexpected_check")
+            raise PrivilegedScanFailedError("helper_response_unexpected_check")
         if not _valid_helper_entry(entry):
-            raise PrivilegedScanFailed("helper_response_invalid_fields")
+            raise PrivilegedScanFailedError("helper_response_invalid_fields")
 
         outcome = Outcome(
             HELPER_STATUSES[entry["status"]],
@@ -142,7 +142,7 @@ def parse_helper_output(requested_ids: tuple[str, ...], output: str) -> tuple[Ch
         results[check_id] = definitions[check_id].result(outcome)
 
     if set(results) != set(requested_ids):
-        raise PrivilegedScanFailed("helper_response_missing_check")
+        raise PrivilegedScanFailedError("helper_response_missing_check")
 
     return tuple(results[check_id] for check_id in requested_ids)
 
@@ -157,7 +157,7 @@ def run_privileged_checks(check_ids: Sequence[str]) -> tuple[CheckResult, ...]:
     ):
         raise ValueError("privileged_check_not_allowlisted")
     if not privileged_helper_available():
-        raise PrivilegedHelperUnavailable("privileged_helper_not_trusted_or_missing")
+        raise PrivilegedHelperUnavailableError("privileged_helper_not_trusted_or_missing")
 
     try:
         process = subprocess.run(
@@ -168,13 +168,13 @@ def run_privileged_checks(check_ids: Sequence[str]) -> tuple[CheckResult, ...]:
             timeout=HELPER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as error:
-        raise PrivilegedScanFailed("privileged_scan_timeout") from error
+        raise PrivilegedScanFailedError("privileged_scan_timeout") from error
     except OSError as error:
-        raise PrivilegedScanFailed("privileged_scan_could_not_start") from error
+        raise PrivilegedScanFailedError("privileged_scan_could_not_start") from error
 
     if process.returncode == PKEXEC_DISMISSED_EXIT_CODE:
         raise PrivilegedScanCancelled("privileged_scan_cancelled")
     if process.returncode != 0:
-        raise PrivilegedScanFailed("privileged_scan_failed")
+        raise PrivilegedScanFailedError("privileged_scan_failed")
 
     return parse_helper_output(requested_ids, process.stdout)
