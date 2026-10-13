@@ -2,6 +2,7 @@
 <component type="desktop-application">
   <id>org.mojitoshield.MojitoShield</id>
   <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <name>MojitoShield</name>
   <summary>Local security checks for Linux Mint</summary>
   <description>
@@ -11,11 +12,12 @@
       It is guidance for everyday users, not a complete security audit.
     </p>
     <ul>
-      <li>Checks firewall, automatic updates, Timeshift, AppArmor, SSH, ClamAV, screen lock, Bluetooth and disk encryption</li>
+      <li>Checks the firewall, security updates, screen lock, automatic login, Timeshift snapshots, network services, AppArmor, disk encryption and boot menu protection</li>
       <li>Works offline and never changes system settings</li>
       <li>Asks for administrator permission only for an optional extended scan</li>
     </ul>
   </description>
+  <url type="homepage">https://github.com/Fimbul-Labs/MojitoShield</url>
   <launchable type="desktop-id">org.mojitoshield.MojitoShield.desktop</launchable>
   <icon type="stock">org.mojitoshield.MojitoShield</icon>
   <developer id="org.mojitoshield">

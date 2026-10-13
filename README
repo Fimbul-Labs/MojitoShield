@@ -135,8 +135,12 @@ python3 -m unittest discover -s tests
 
 The code style is set in `ruff.toml`. Check and format the code from the project folder with `ruff check` and `ruff format` (the Ruff extension for VS Code includes ruff).
 
-The prototype shows the 9 checks in two levels. The basic scan is language-independent and runs without sudo. Extended checks become available only from a trusted, installed Debian package; they cannot be run safely directly from a writable project directory. The prototype is not a finished security audit. The Debian package has not been built or installed; the build environment lacks `debhelper-compat`.
+The prototype shows the 9 checks in two levels. The basic scan is language-independent and runs without sudo. Extended checks become available only from a trusted, installed Debian package; they cannot be run safely directly from a writable project directory. The prototype is not a finished security audit. The Debian package builds and installs on Linux Mint 22.3, and a fresh Mint 22.3 Cinnamon installation has been tested in a virtual machine; other editions are not tested yet (see `docs/testing.md`).
 
 ## Instructions for developers and coding assistants
 
 Implement the plan step by step. Start by specifying and testing the check contracts before claiming that the app can detect a risk. Prioritise safe and explainable diagnostics over more features. Keep offline operation, Mint integration, the two checklist levels and all security boundaries in this document. Do not add report/export, password testing or automatic system changes without first changing the product definition.
+
+## Licence
+
+MojitoShield is free software, licensed under the GNU General Public License version 3 or (at your option) any later version. See `LICENSE`. The AppStream metadata file is licensed under CC0-1.0.
