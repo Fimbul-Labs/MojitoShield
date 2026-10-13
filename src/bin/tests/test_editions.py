@@ -19,6 +19,8 @@ EDITIONS = Path(__file__).parent / "data/editions"
 
 # Edition file name: the screen-lock result confirmed on that system.
 EXPECTED = {
+    # Fresh install: Cinnamon's default locks after 15 minutes.
+    "mint-22.3-cinnamon": (Status.OK, "screen_lock.enabled", "15"),
 }
 
 

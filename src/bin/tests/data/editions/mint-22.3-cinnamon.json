@@ -1,0 +1,138 @@
+{
+  "format": 1,
+  "collected": "2026-10-13",
+  "os_release": {
+    "ID": "linuxmint",
+    "ID_LIKE": "ubuntu debian",
+    "NAME": "Linux Mint",
+    "PRETTY_NAME": "Linux Mint 22.3",
+    "VERSION_ID": "22.3",
+    "VERSION_CODENAME": "zena"
+  },
+  "xdg_current_desktop": "X-Cinnamon",
+  "display_manager": "lightdm",
+  "apparmor_enabled": "Y",
+  "files_present": {
+    "/etc/ufw/ufw.conf": true,
+    "/etc/apt/apt.conf.d/20auto-upgrades": false,
+    "/usr/lib/linuxmint/mintUpdate/automatic_upgrades.py": true,
+    "/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled": false,
+    "/etc/X11/default-display-manager": true,
+    "/usr/share/lightdm/lightdm.conf.d": true,
+    "/etc/lightdm/lightdm.conf.d": true,
+    "/etc/lightdm/lightdm.conf": false,
+    "/usr/bin/timeshift": true,
+    "/etc/timeshift/timeshift.json": false,
+    "/etc/ssh/sshd_config": false,
+    "/sys/module/apparmor/parameters/enabled": true,
+    "/etc/grub.d": true
+  },
+  "commands": [
+    {
+      "arguments": [
+        "gsettings",
+        "get",
+        "org.cinnamon.desktop.screensaver",
+        "lock-enabled"
+      ],
+      "available": true,
+      "returncode": 0,
+      "stdout": "true\n"
+    },
+    {
+      "arguments": [
+        "gsettings",
+        "get",
+        "org.cinnamon.desktop.session",
+        "idle-delay"
+      ],
+      "available": true,
+      "returncode": 0,
+      "stdout": "uint32 900\n"
+    },
+    {
+      "arguments": [
+        "gsettings",
+        "get",
+        "org.mate.screensaver",
+        "lock-enabled"
+      ],
+      "available": true,
+      "returncode": 1,
+      "stdout": ""
+    },
+    {
+      "arguments": [
+        "gsettings",
+        "get",
+        "org.mate.session",
+        "idle-delay"
+      ],
+      "available": true,
+      "returncode": 1,
+      "stdout": ""
+    },
+    {
+      "arguments": [
+        "gsettings",
+        "get",
+        "org.mate.screensaver",
+        "idle-activation-enabled"
+      ],
+      "available": true,
+      "returncode": 1,
+      "stdout": ""
+    },
+    {
+      "arguments": [
+        "xfconf-query",
+        "--channel",
+        "xfce4-screensaver",
+        "--property",
+        "/lock/enabled"
+      ],
+      "available": false
+    },
+    {
+      "arguments": [
+        "xfconf-query",
+        "--channel",
+        "xfce4-screensaver",
+        "--property",
+        "/saver/idle-activation/delay"
+      ],
+      "available": false
+    },
+    {
+      "arguments": [
+        "xfconf-query",
+        "--channel",
+        "xfce4-screensaver",
+        "--property",
+        "/saver/enabled"
+      ],
+      "available": false
+    },
+    {
+      "arguments": [
+        "systemctl",
+        "is-active",
+        "ufw"
+      ],
+      "available": true,
+      "returncode": 0,
+      "stdout": "active\n"
+    },
+    {
+      "arguments": [
+        "systemctl",
+        "is-enabled",
+        "mintupdate-automation-upgrade.timer"
+      ],
+      "available": true,
+      "returncode": 1,
+      "stdout": "disabled\n"
+    }
+  ]
+}
+
