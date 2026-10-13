@@ -31,7 +31,7 @@ Statuses: **OK**, **Warning**, **Could not determine**, **Requires extended perm
 
 ### 2. System up to date (`updates`)
 
-- **Question:** Are security updates installed in time? (Decided 2026-10-13, after a fresh-install VM test showed that the earlier rule, "any `Upgrade:` line in the APT history within 30 days", gave OK on a system with 197 pending updates.)
+- **Question:** Are security updates installed in time? (An earlier rule, any upgrade in the APT history within 30 days, gave OK on a fresh installation with 197 pending updates.)
 - **Reads** (all world-readable, no network):
   - Update Manager automation: the flag `/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled` plus `systemctl is-enabled mintupdate-automation-upgrade.timer`.
   - APT unattended-upgrades: `/etc/apt/apt.conf.d/20auto-upgrades`.
@@ -137,8 +137,8 @@ Statuses: **OK**, **Warning**, **Could not determine**, **Requires extended perm
   - A password is set in `custom.cfg` → **OK**.
   - A password is set in `/etc/grub.d`, and `grub.cfg` was generated after those scripts were last changed → **OK**.
   - A password is set in `/etc/grub.d`, but `grub.cfg` is older → **Requires extended permission**. The extended scan reads `grub.cfg`: password present → **OK**; missing → **Warning** with the next step `sudo update-grub`.
-  - No password and no encryption → **Warning**. Next step: disk encryption at the next installation; a boot-menu password is an advanced alternative, and a mistake can stop the computer from starting, so ask on the Linux Mint forums first. On unencrypted computers this is a second Warning next to *Disk encryption*; that was a deliberate decision (2026-10-11).
+  - No password and no encryption → **Warning**. Next step: disk encryption at the next installation; a boot-menu password is an advanced alternative, and a mistake can stop the computer from starting, so ask on the Linux Mint forums first. On unencrypted computers this is a second Warning next to *Disk encryption*, on purpose: they are different risks with different fixes.
   - GRUB is not used → **Could not determine**.
   - Encryption state unknown and no password, or files unreadable → **Could not determine**.
 - **Cannot conclude:** firmware (BIOS/UEFI) passwords, Secure Boot or boot order. Whether boot entries are marked `--unrestricted` is not checked; that only affects starting an entry, not changing its options.
-- **Not checked (decided 2026-10-11):** the root account's password state and recovery-mode behaviour (`sulogin`). The earlier, wider proposal is kept in `docs/root-shell-check-proposal.md` for reference.
+- **Not checked:** the root account's password state and recovery-mode behaviour (`sulogin`).
