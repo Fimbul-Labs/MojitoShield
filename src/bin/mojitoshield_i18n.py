@@ -6,7 +6,6 @@ leaves room to add translated catalogs later without touching the checks.
 
 from __future__ import annotations
 
-
 ENGLISH = {
     "app.title": "MojitoShield",
     "app.unknown_distribution": "an unknown distribution",

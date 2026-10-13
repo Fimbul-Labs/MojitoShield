@@ -8,14 +8,21 @@ from pathlib import Path
 from mojitoshield_core import CHECKS, SCREEN_LOCK_SETTINGS, Status
 from mojitoshield_i18n import ENGLISH
 
-
 SOURCE_ROOT = Path(__file__).parents[1]
 ANALYSIS_SOURCES = ("mojitoshield_core.py", "mojitoshield_privileged.py")
 ALL_SOURCES = (*ANALYSIS_SOURCES, "mojitoshield.py", "mojitoshield_i18n.py")
 SYSTEMD_UNIT_SUFFIXES = (".service", ".socket", ".timer")
 MESSAGE_PREFIXES = (
-    "firewall", "updates", "screen_lock", "auto_login", "timeshift",
-    "network_services", "apparmor", "disk_encryption", "boot_menu", "check",
+    "firewall",
+    "updates",
+    "screen_lock",
+    "auto_login",
+    "timeshift",
+    "network_services",
+    "apparmor",
+    "disk_encryption",
+    "boot_menu",
+    "check",
 )
 
 
@@ -83,19 +90,49 @@ class TranslationCatalogTests(unittest.TestCase):
 
     def test_catalog_has_no_unused_result_messages(self):
         used = self.analysis_message_ids() | self.interface_message_ids()
-        used |= {f"check.{definition.check_id}.{part}" for definition in CHECKS for part in ("title", "description")}
+        used |= {
+            f"check.{definition.check_id}.{part}"
+            for definition in CHECKS
+            for part in ("title", "description")
+        }
         self.assertEqual(sorted(set(ENGLISH) - used), [])
 
 
 class OfflineAndReadOnlyTests(unittest.TestCase):
     NETWORK_MODULES = {
-        "socket", "ssl", "http", "urllib", "ftplib", "smtplib", "requests",
-        "asyncio", "xmlrpc", "telnetlib", "poplib", "imaplib",
+        "socket",
+        "ssl",
+        "http",
+        "urllib",
+        "ftplib",
+        "smtplib",
+        "requests",
+        "asyncio",
+        "xmlrpc",
+        "telnetlib",
+        "poplib",
+        "imaplib",
     }
     WRITING_METHODS = {
-        "write_text", "write_bytes", "unlink", "rmdir", "mkdir", "rename",
-        "replace", "chmod", "chown", "touch", "symlink_to", "hardlink_to",
-        "remove", "removedirs", "makedirs", "rmtree", "copy", "copyfile", "move",
+        "write_text",
+        "write_bytes",
+        "unlink",
+        "rmdir",
+        "mkdir",
+        "rename",
+        "replace",
+        "chmod",
+        "chown",
+        "touch",
+        "symlink_to",
+        "hardlink_to",
+        "remove",
+        "removedirs",
+        "makedirs",
+        "rmtree",
+        "copy",
+        "copyfile",
+        "move",
     }
 
     def test_no_network_modules_are_imported(self):
@@ -138,7 +175,11 @@ class OfflineAndReadOnlyTests(unittest.TestCase):
         commands = [
             query
             for settings in SCREEN_LOCK_SETTINGS.values()
-            for query in (settings.lock_query, settings.idle_delay_query, settings.idle_enabled_query)
+            for query in (
+                settings.lock_query,
+                settings.idle_delay_query,
+                settings.idle_enabled_query,
+            )
             if query is not None
         ]
         for node in ast.walk(ast.parse(source("mojitoshield_core.py"))):

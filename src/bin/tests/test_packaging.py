@@ -7,7 +7,6 @@ from pathlib import Path
 
 from mojitoshield_core import PRIVILEGED_HELPER_PATH, PRIVILEGED_POLICY_PATH
 
-
 SOURCE_ROOT = Path(__file__).parents[1]
 
 
@@ -49,9 +48,7 @@ class DebianPackagingTests(unittest.TestCase):
             "/" + destination + Path(source).name
             for source, destination in self._install_entries()
         }
-        installed_app = next(
-            path for path in destinations if path.endswith("/mojitoshield.py")
-        )
+        installed_app = next(path for path in destinations if path.endswith("/mojitoshield.py"))
         self.assertIn(installed_app, launcher)
 
     def test_package_requires_the_python_version_the_code_uses(self):
@@ -74,9 +71,7 @@ class ApplicationIdentityTests(unittest.TestCase):
         application_id = self.application_id()
         data = SOURCE_ROOT / "data"
         self.assertTrue((data / f"applications/{application_id}.desktop").is_file())
-        self.assertTrue(
-            (data / f"icons/hicolor/scalable/apps/{application_id}.svg").is_file()
-        )
+        self.assertTrue((data / f"icons/hicolor/scalable/apps/{application_id}.svg").is_file())
 
         metainfo = ET.parse(data / f"metainfo/{application_id}.metainfo.xml").getroot()
         self.assertEqual(metainfo.findtext("id"), application_id)

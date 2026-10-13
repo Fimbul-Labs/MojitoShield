@@ -56,9 +56,7 @@ class WindowSmokeTests(unittest.TestCase):
     def setUpClass(cls):
         # A process can only register one anonymous application on the session bus.
         if WindowSmokeTests.application is None:
-            WindowSmokeTests.application = Gtk.Application(
-                flags=Gio.ApplicationFlags.NON_UNIQUE
-            )
+            WindowSmokeTests.application = Gtk.Application(flags=Gio.ApplicationFlags.NON_UNIQUE)
             WindowSmokeTests.application.register(None)
 
     def open_window(self, results: tuple[CheckResult, ...], release=None):
@@ -92,7 +90,10 @@ class WindowSmokeTests(unittest.TestCase):
         self.assertEqual(len(rows), 9)
         self.assertEqual([row.check.level for row in rows], [1] * 7 + [2] * 2)
         headers = [row.get_header() for row in rows if row.get_header() is not None]
-        self.assertEqual([header.get_text() for header in headers], ["Level 1: everyday protection", "Level 2: physical access"])
+        self.assertEqual(
+            [header.get_text() for header in headers],
+            ["Level 1: everyday protection", "Level 2: physical access"],
+        )
         self.assertEqual(window.check_list.get_selected_row().check.check_id, "firewall")
         self.assertEqual(window.detail_title.get_text(), "Firewall")
         self.assertEqual(rows[0].get_accessible().get_name(), "Firewall: OK")
@@ -129,7 +130,9 @@ class WindowSmokeTests(unittest.TestCase):
 
         self.assertEqual(window.main_paned.get_orientation(), Gtk.Orientation.HORIZONTAL)
         self.assertEqual(window.main_paned.get_position(), gui.LIST_WIDTH)
-        self.assertEqual(window.detail_explanation.get_max_width_chars(), gui.DETAIL_MAX_WIDTH_CHARS)
+        self.assertEqual(
+            window.detail_explanation.get_max_width_chars(), gui.DETAIL_MAX_WIDTH_CHARS
+        )
 
     def test_complete_scan_hides_extended_scan(self):
         window = self.open_window(fake_results())

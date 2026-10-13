@@ -8,9 +8,8 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
 
 UFW_EXECUTABLE = Path("/usr/sbin/ufw")
 GRUB_CONFIGS = (Path("/boot/grub/grub.cfg"), Path("/boot/grub/custom.cfg"))
@@ -89,14 +88,26 @@ def _boot_menu() -> dict[str, object]:
         except FileNotFoundError:
             continue
         except OSError:
-            return {"check_id": "boot-menu", "status": "unknown", "message_id": "boot_menu.config_unreadable"}
+            return {
+                "check_id": "boot-menu",
+                "status": "unknown",
+                "message_id": "boot_menu.config_unreadable",
+            }
 
     if not texts:
-        return {"check_id": "boot-menu", "status": "unknown", "message_id": "boot_menu.grub_not_used"}
+        return {
+            "check_id": "boot-menu",
+            "status": "unknown",
+            "message_id": "boot_menu.grub_not_used",
+        }
     # Only the conclusion leaves the helper, never lines from the boot configuration.
     if _grub_password_configured("\n".join(texts)):
         return {"check_id": "boot-menu", "status": "ok", "message_id": "boot_menu.password_active"}
-    return {"check_id": "boot-menu", "status": "warning", "message_id": "boot_menu.password_not_active"}
+    return {
+        "check_id": "boot-menu",
+        "status": "warning",
+        "message_id": "boot_menu.password_not_active",
+    }
 
 
 CHECKS: dict[str, Callable[[], dict[str, object]]] = {

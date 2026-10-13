@@ -17,12 +17,11 @@ import re
 import shutil
 import stat
 import subprocess
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -105,21 +104,35 @@ SCREEN_LOCK_SETTINGS = {
         idle_delay_query=["gsettings", "get", "org.mate.session", "idle-delay"],
         idle_delay_unit_seconds=60,
         idle_enabled_query=[
-            "gsettings", "get", "org.mate.screensaver", "idle-activation-enabled",
+            "gsettings",
+            "get",
+            "org.mate.screensaver",
+            "idle-activation-enabled",
         ],
     ),
     "xfce": ScreenLockSettings(
         name="Xfce",
         lock_query=[
-            "xfconf-query", "--channel", "xfce4-screensaver", "--property", "/lock/enabled",
+            "xfconf-query",
+            "--channel",
+            "xfce4-screensaver",
+            "--property",
+            "/lock/enabled",
         ],
         idle_delay_query=[
-            "xfconf-query", "--channel", "xfce4-screensaver",
-            "--property", "/saver/idle-activation/delay",
+            "xfconf-query",
+            "--channel",
+            "xfce4-screensaver",
+            "--property",
+            "/saver/idle-activation/delay",
         ],
         idle_delay_unit_seconds=60,
         idle_enabled_query=[
-            "xfconf-query", "--channel", "xfce4-screensaver", "--property", "/saver/enabled",
+            "xfconf-query",
+            "--channel",
+            "xfce4-screensaver",
+            "--property",
+            "/saver/enabled",
         ],
     ),
 }
@@ -158,9 +171,7 @@ def identify_distribution(release: Mapping[str, str]) -> bool:
     if distribution_id == "linuxmint":
         return True
 
-    return "lmde" in name or "lmde" in pretty_name or (
-        "linux mint debian edition" in pretty_name
-    )
+    return "lmde" in name or "lmde" in pretty_name or ("linux mint debian edition" in pretty_name)
 
 
 def current_distribution() -> tuple[bool, str | None]:
@@ -260,7 +271,7 @@ def parse_apt_auto_updates(contents: str) -> bool | None:
         "Unattended-Upgrade": None,
     }
     pattern = re.compile(
-        r'^\s*APT::Periodic::(Update-Package-Lists|Unattended-Upgrade)'
+        r"^\s*APT::Periodic::(Update-Package-Lists|Unattended-Upgrade)"
         r'\s+["\']?([01])["\']?\s*;'
     )
 
@@ -345,7 +356,10 @@ def _check_updates(check: CheckDefinition) -> CheckResult:
     reboot_days = _reboot_pending_days()
     if reboot_days is not None and reboot_days > REBOOT_PENDING_MAX_DAYS:
         return _result(
-            check, Status.WARNING, "updates.reboot_pending", str(REBOOT_REQUIRED),
+            check,
+            Status.WARNING,
+            "updates.reboot_pending",
+            str(REBOOT_REQUIRED),
             {"days": str(int(reboot_days))},
         )
 
@@ -460,14 +474,14 @@ def _lightdm_config_files() -> list[Path]:
 
 def _check_auto_login(check: CheckDefinition) -> CheckResult:
     try:
-        display_manager = Path(
-            DISPLAY_MANAGER_FILE.read_text(encoding="utf-8").strip()
-        ).name
+        display_manager = Path(DISPLAY_MANAGER_FILE.read_text(encoding="utf-8").strip()).name
     except (OSError, UnicodeError):
         return _result(check, Status.UNKNOWN, "auto_login.display_manager_unknown")
     if display_manager != "lightdm":
         return _result(
-            check, Status.UNKNOWN, "auto_login.display_manager_not_supported",
+            check,
+            Status.UNKNOWN,
+            "auto_login.display_manager_not_supported",
             data={"display_manager": display_manager[:40]},
         )
 
@@ -520,7 +534,9 @@ def parse_timeshift_settings(contents: str) -> TimeshiftSettings | None:
 
 def timeshift_age_limit_days(schedules: Sequence[str]) -> float:
     """Allow twice the most frequent schedule, within fixed bounds."""
-    intervals = [TIMESHIFT_SCHEDULE_DAYS[name] for name in schedules if name in TIMESHIFT_SCHEDULE_DAYS]
+    intervals = [
+        TIMESHIFT_SCHEDULE_DAYS[name] for name in schedules if name in TIMESHIFT_SCHEDULE_DAYS
+    ]
     if not intervals:
         return TIMESHIFT_MAX_AGE_LIMIT_DAYS
     return min(
@@ -557,7 +573,9 @@ def _check_timeshift(check: CheckDefinition) -> CheckResult:
     except (OSError, UnicodeError):
         settings = None
     if settings is None:
-        return _result(check, Status.UNKNOWN, "timeshift.settings_unreadable", str(TIMESHIFT_CONFIG))
+        return _result(
+            check, Status.UNKNOWN, "timeshift.settings_unreadable", str(TIMESHIFT_CONFIG)
+        )
 
     if not settings.configured:
         return _result(check, Status.WARNING, "timeshift.not_set_up", str(TIMESHIFT_CONFIG))
@@ -573,7 +591,9 @@ def _check_timeshift(check: CheckDefinition) -> CheckResult:
     except FileNotFoundError:
         names = []
     except OSError:
-        return _result(check, Status.UNKNOWN, "timeshift.snapshots_unreadable", str(TIMESHIFT_SNAPSHOTS))
+        return _result(
+            check, Status.UNKNOWN, "timeshift.snapshots_unreadable", str(TIMESHIFT_SNAPSHOTS)
+        )
 
     newest = newest_snapshot_time(names)
     if newest is None:
@@ -583,17 +603,23 @@ def _check_timeshift(check: CheckDefinition) -> CheckResult:
     limit_days = timeshift_age_limit_days(settings.schedules)
     data = {"days": str(int(age_days)), "limit": str(int(limit_days))}
     if age_days <= limit_days:
-        return _result(check, Status.OK, "timeshift.recent_snapshot", str(TIMESHIFT_SNAPSHOTS), data)
-    return _result(check, Status.WARNING, "timeshift.snapshot_too_old", str(TIMESHIFT_SNAPSHOTS), data)
+        return _result(
+            check, Status.OK, "timeshift.recent_snapshot", str(TIMESHIFT_SNAPSHOTS), data
+        )
+    return _result(
+        check, Status.WARNING, "timeshift.snapshot_too_old", str(TIMESHIFT_SNAPSHOTS), data
+    )
 
 
 # 6. Network services
 
 
-def _proc_net_address(hex_address: str, ipv6: bool) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+def _proc_net_address(
+    hex_address: str, ipv6: bool
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
     raw = bytes.fromhex(hex_address)
     # The kernel prints each 32-bit word in host (little-endian) byte order.
-    words = b"".join(raw[index:index + 4][::-1] for index in range(0, len(raw), 4))
+    words = b"".join(raw[index : index + 4][::-1] for index in range(0, len(raw), 4))
     return ipaddress.IPv6Address(words) if ipv6 else ipaddress.IPv4Address(words)
 
 
@@ -727,7 +753,10 @@ def _check_network_services(check: CheckDefinition) -> CheckResult:
     remote_desktop = sorted(ports & REMOTE_DESKTOP_PORTS)
     if remote_desktop:
         return _result(
-            check, Status.WARNING, "network_services.remote_desktop", evidence,
+            check,
+            Status.WARNING,
+            "network_services.remote_desktop",
+            evidence,
             {"ports": ", ".join(str(port) for port in remote_desktop)},
         )
 
@@ -735,14 +764,19 @@ def _check_network_services(check: CheckDefinition) -> CheckResult:
         try:
             risky = ssh_allows_password_or_root_login(_ssh_config_lines(SSH_CONFIG))
         except (OSError, UnicodeError):
-            return _result(check, Status.UNKNOWN, "network_services.ssh_settings_unreadable", evidence)
+            return _result(
+                check, Status.UNKNOWN, "network_services.ssh_settings_unreadable", evidence
+            )
         if risky:
             return _result(check, Status.WARNING, "network_services.ssh_password_login", evidence)
 
     other_ports = sorted(ports - {SSH_PORT})
     if other_ports:
         return _result(
-            check, Status.UNKNOWN, "network_services.other_ports", evidence,
+            check,
+            Status.UNKNOWN,
+            "network_services.other_ports",
+            evidence,
             {"ports": ", ".join(str(port) for port in other_ports[:20])},
         )
     return _result(check, Status.OK, "network_services.ssh_key_only", evidence)
@@ -797,9 +831,7 @@ def _mount_encryption(target: str) -> MountEncryption:
         return MountEncryption(None, "mount_source_unreadable")
 
     device = block_device_from_mount_source(source)
-    block_types = _run_command(
-        ["lsblk", "--inverse", "--noheadings", "--output", "TYPE", device]
-    )
+    block_types = _run_command(["lsblk", "--inverse", "--noheadings", "--output", "TYPE", device])
     if block_types is None or block_types.returncode != 0:
         return MountEncryption(None, source, filesystem_type)
 
@@ -878,8 +910,11 @@ def _check_boot_menu(check: CheckDefinition) -> CheckResult:
             if path.is_file() and path.stat().st_mode & 0o111
         }
         changed = max(
-            (path.stat().st_mtime for path, text in scripts.items()
-             if "superusers" in text or "password" in text),
+            (
+                path.stat().st_mtime
+                for path, text in scripts.items()
+                if "superusers" in text or "password" in text
+            ),
             default=0.0,
         )
     except OSError:
@@ -888,7 +923,9 @@ def _check_boot_menu(check: CheckDefinition) -> CheckResult:
     if grub_password_configured("\n".join(scripts.values())):
         if changed <= generated:
             return _result(check, Status.OK, "boot_menu.password_active", str(GRUB_SCRIPTS))
-        return _result(check, Status.AUTH_REQUIRED, "boot_menu.password_not_confirmed", str(GRUB_SCRIPTS))
+        return _result(
+            check, Status.AUTH_REQUIRED, "boot_menu.password_not_confirmed", str(GRUB_SCRIPTS)
+        )
     if system.crypt_mapping is None:
         return _result(check, Status.UNKNOWN, "boot_menu.status_unknown")
     return _result(check, Status.WARNING, "boot_menu.no_password", str(GRUB_SCRIPTS))
@@ -914,7 +951,9 @@ def run_checks() -> tuple[CheckResult, ...]:
         try:
             results.append(check.run(check))
         except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
-            LOGGER.warning("Check %s could not complete (%s).", check.check_id, type(error).__name__)
+            LOGGER.warning(
+                "Check %s could not complete (%s).", check.check_id, type(error).__name__
+            )
             results.append(
                 _result(
                     check,

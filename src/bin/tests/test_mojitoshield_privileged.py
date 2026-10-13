@@ -54,9 +54,7 @@ class TrustedPathTests(unittest.TestCase):
         self.assertFalse(self._is_trusted(executable=False, file_mode=0o646))
 
     def test_writable_parent_directory_is_not_trusted(self):
-        self.assertFalse(
-            self._is_trusted(executable=False, file_mode=0o644, directory_mode=0o777)
-        )
+        self.assertFalse(self._is_trusted(executable=False, file_mode=0o644, directory_mode=0o777))
 
     def test_missing_file_is_not_trusted(self):
         self.assertFalse(
@@ -157,18 +155,27 @@ class PrivilegedHelperTests(unittest.TestCase):
         )
         for sample in samples:
             with self.subTest(sample=sample):
-                self.assertEqual(helper._grub_password_configured(sample), grub_password_configured(sample))
+                self.assertEqual(
+                    helper._grub_password_configured(sample), grub_password_configured(sample)
+                )
 
     def test_boot_menu_helper_returns_only_a_conclusion(self):
         with tempfile.TemporaryDirectory() as directory:
             grub_config = Path(directory) / "grub.cfg"
-            grub_config.write_text('set superusers="admin"\npassword_pbkdf2 admin grub.pbkdf2.SECRET\n')
-            with patch.object(helper, "GRUB_CONFIGS", (grub_config, Path(directory) / "custom.cfg")):
+            grub_config.write_text(
+                'set superusers="admin"\npassword_pbkdf2 admin grub.pbkdf2.SECRET\n'
+            )
+            with patch.object(
+                helper, "GRUB_CONFIGS", (grub_config, Path(directory) / "custom.cfg")
+            ):
                 result = helper._boot_menu()
                 grub_config.write_text("menuentry 'Linux Mint' {}\n")
                 missing = helper._boot_menu()
 
-        self.assertEqual(result, {"check_id": "boot-menu", "status": "ok", "message_id": "boot_menu.password_active"})
+        self.assertEqual(
+            result,
+            {"check_id": "boot-menu", "status": "ok", "message_id": "boot_menu.password_active"},
+        )
         self.assertNotIn("SECRET", json.dumps(result))
         self.assertEqual(missing["message_id"], "boot_menu.password_not_active")
 
@@ -207,8 +214,7 @@ class PrivilegedHelperTests(unittest.TestCase):
 
     def test_policy_action_points_to_the_fixed_helper_and_does_not_cache_auth(self):
         policy_path = (
-            Path(__file__).parents[1]
-            / "data/polkit/org.mojitoshield.privileged-check.policy"
+            Path(__file__).parents[1] / "data/polkit/org.mojitoshield.privileged-check.policy"
         )
         policy = ET.parse(policy_path).getroot()
         action = policy.find("action")
@@ -217,14 +223,18 @@ class PrivilegedHelperTests(unittest.TestCase):
         assert action is not None
         self.assertEqual(action.attrib["id"], "org.mojitoshield.privileged-check")
         annotations = {
-            annotation.attrib["key"]: annotation.text
-            for annotation in action.findall("annotate")
+            annotation.attrib["key"]: annotation.text for annotation in action.findall("annotate")
         }
         self.assertEqual(
             annotations["org.freedesktop.policykit.exec.path"],
             str(PRIVILEGED_HELPER_PATH),
         )
-        self.assertFalse(any("auth_admin_keep" in (element.text or "") for element in action.findall("defaults/*")))
+        self.assertFalse(
+            any(
+                "auth_admin_keep" in (element.text or "")
+                for element in action.findall("defaults/*")
+            )
+        )
 
 
 if __name__ == "__main__":

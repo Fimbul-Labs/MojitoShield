@@ -22,7 +22,6 @@ from pathlib import Path
 
 import mojitoshield_core as core
 
-
 FORMAT_VERSION = 1
 OS_RELEASE_FIELDS = ("ID", "ID_LIKE", "NAME", "PRETTY_NAME", "VERSION_ID", "VERSION_CODENAME")
 

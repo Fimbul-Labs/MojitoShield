@@ -10,7 +10,6 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gio, GLib, Gtk
-
 from mojitoshield_core import (
     CHECKS,
     CheckResult,
@@ -22,7 +21,6 @@ from mojitoshield_core import (
     run_privileged_checks,
 )
 from mojitoshield_i18n import translate
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,9 +39,7 @@ def confirm_unsupported_distribution() -> bool:
         buttons=Gtk.ButtonsType.NONE,
         text=translate("app.unsupported.title"),
     )
-    dialog.format_secondary_text(
-        translate("app.unsupported.body", distribution=distribution_name)
-    )
+    dialog.format_secondary_text(translate("app.unsupported.body", distribution=distribution_name))
     dialog.add_button(translate("app.abort"), Gtk.ResponseType.CANCEL)
     dialog.add_button(translate("app.continue"), Gtk.ResponseType.ACCEPT)
     response = dialog.run()
@@ -140,12 +136,8 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.refresh_button = Gtk.Button.new_from_icon_name(
             "view-refresh-symbolic", Gtk.IconSize.BUTTON
         )
-        self.refresh_button.set_tooltip_text(
-            translate("app.refresh")
-        )
-        self.refresh_button.get_accessible().set_name(
-            translate("app.refresh")
-        )
+        self.refresh_button.set_tooltip_text(translate("app.refresh"))
+        self.refresh_button.get_accessible().set_name(translate("app.refresh"))
         self.refresh_button.set_action_name("win.refresh")
         refresh_action = Gio.SimpleAction.new("refresh", None)
         refresh_action.connect("activate", lambda *_args: self._start_scan())
@@ -271,18 +263,14 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         if row.get_header() is not None:
             return
         heading = Gtk.Label()
-        heading.set_markup(
-            f"<b>{GLib.markup_escape_text(translate(f'level.{level}'))}</b>"
-        )
+        heading.set_markup(f"<b>{GLib.markup_escape_text(translate(f'level.{level}'))}</b>")
         heading.set_xalign(0)
         heading.set_margin_top(4 if before is None else 14)
         heading.set_margin_bottom(4)
         row.set_header(heading)
 
     def _set_detail_title(self, text: str) -> None:
-        self.detail_title.set_markup(
-            f"<big><b>{GLib.markup_escape_text(text)}</b></big>"
-        )
+        self.detail_title.set_markup(f"<big><b>{GLib.markup_escape_text(text)}</b></big>")
 
     @staticmethod
     def _limit_line_length(label: Gtk.Label) -> None:
@@ -330,18 +318,12 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         status_text, icon_name = status_presentation(check)
         self.detail_status_icon.set_from_icon_name(icon_name, Gtk.IconSize.MENU)
         self.detail_status_label.set_text(status_text)
-        self.detail_result.set_text(
-            translate(check.message_id, **dict(check.data))
-        )
+        self.detail_result.set_text(translate(check.message_id, **dict(check.data)))
         self.detail_heading.show()
-        self.detail_explanation.set_text(
-            translate(f"check.{check.check_id}.description")
-        )
+        self.detail_explanation.set_text(translate(f"check.{check.check_id}.description"))
         self.detail_explanation.show()
         if check.evidence:
-            self.detail_evidence.set_text(
-                translate("app.evidence", evidence=check.evidence)
-            )
+            self.detail_evidence.set_text(translate("app.evidence", evidence=check.evidence))
             self.detail_evidence.show()
         else:
             self.detail_evidence.hide()
@@ -361,9 +343,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
             self._show_detail_prompt()
 
         self._refresh_action.set_enabled(False)
-        self.summary_label.set_text(
-            translate("app.scanning", count=str(len(CHECKS)))
-        )
+        self.summary_label.set_text(translate("app.scanning", count=str(len(CHECKS))))
 
         def scan() -> None:
             try:
@@ -402,9 +382,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         counts = {status: 0 for status in Status}
         for result in self._results.values():
             counts[result.status] += 1
-        summary_key = (
-            "app.summary_incomplete" if counts[Status.AUTH_REQUIRED] else "app.summary"
-        )
+        summary_key = "app.summary_incomplete" if counts[Status.AUTH_REQUIRED] else "app.summary"
         summary = translate(
             summary_key,
             ok=str(counts[Status.OK]),
@@ -415,9 +393,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.summary_label.set_text(f"{prefix} {summary}".strip())
 
     def _update_extended_button(self) -> None:
-        required = any(
-            result.status is Status.AUTH_REQUIRED for result in self._results.values()
-        )
+        required = any(result.status is Status.AUTH_REQUIRED for result in self._results.values())
         if not required:
             self.extended_button.hide()
             return
@@ -471,12 +447,11 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
             "cancelled": "app.extended_cancelled",
             "failed": "app.extended_failed",
         }.get(outcome, "")
-        self._update_summary(
-            translate(message_key) if message_key else ""
-        )
+        self._update_summary(translate(message_key) if message_key else "")
         self._update_extended_button()
         self._refresh_action.set_enabled(True)
         return GLib.SOURCE_REMOVE
+
 
 class MojitoShieldApplication(Gtk.Application):
     def __init__(self) -> None:

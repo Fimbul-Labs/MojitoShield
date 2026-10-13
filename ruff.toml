@@ -1,0 +1,20 @@
+# Style rules for all Python code in the project.
+# Check with `ruff check` and format with `ruff format`, run from the project folder.
+
+line-length = 99
+target-version = "py310"  # The oldest Python on a supported Mint (Mint 21).
+
+[lint]
+select = [
+    "E", "W",  # pycodestyle: PEP 8 layout
+    "F",       # pyflakes: unused names, undefined names
+    "I",       # isort: import order
+    "UP",      # pyupgrade: modern syntax for the target version
+    "B",       # bugbear: likely bugs
+    "SIM",     # simpler equivalent code
+    "BLE",     # catching every exception
+    "RUF",     # ruff's own checks
+]
+# The formatter keeps code within the line length. Only long text strings,
+# such as the messages in the text catalog, may go past it.
+ignore = ["E501"]

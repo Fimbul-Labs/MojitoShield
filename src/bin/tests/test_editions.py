@@ -14,7 +14,6 @@ import mojitoshield_core as core
 from mojitoshield_core import Status
 from test_checks import CheckTestCase, completed, run
 
-
 EDITIONS = Path(__file__).parent / "data/editions"
 
 # Edition file name: the screen-lock result confirmed on that system.
@@ -38,13 +37,15 @@ class EditionDataTests(CheckTestCase):
             )
             for record in edition["commands"]
         }
-        self.start(patch(
-            "mojitoshield_core._run_command",
-            side_effect=lambda arguments: responses.get(tuple(arguments)),
-        ))
-        self.start(patch.dict(
-            "os.environ", {"XDG_CURRENT_DESKTOP": edition["xdg_current_desktop"]}
-        ))
+        self.start(
+            patch(
+                "mojitoshield_core._run_command",
+                side_effect=lambda arguments: responses.get(tuple(arguments)),
+            )
+        )
+        self.start(
+            patch.dict("os.environ", {"XDG_CURRENT_DESKTOP": edition["xdg_current_desktop"]})
+        )
 
     def test_every_edition_has_a_confirmed_result(self):
         self.assertEqual(set(load_editions()), set(EXPECTED))

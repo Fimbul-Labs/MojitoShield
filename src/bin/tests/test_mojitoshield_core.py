@@ -1,5 +1,5 @@
-import unittest
 import json
+import unittest
 from unittest.mock import patch
 
 from mojitoshield_core import (
@@ -35,16 +35,14 @@ class DistributionTests(unittest.TestCase):
 class AptSettingsTests(unittest.TestCase):
     def test_enabled_settings_are_detected(self):
         contents = (
-            'APT::Periodic::Update-Package-Lists "1";\n'
-            'APT::Periodic::Unattended-Upgrade "1";\n'
+            'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n'
         )
 
         self.assertIs(parse_apt_auto_updates(contents), True)
 
     def test_disabled_setting_is_detected(self):
         contents = (
-            'APT::Periodic::Update-Package-Lists "1";\n'
-            'APT::Periodic::Unattended-Upgrade "0";\n'
+            'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "0";\n'
         )
 
         self.assertIs(parse_apt_auto_updates(contents), False)
@@ -113,6 +111,7 @@ class ResultTests(unittest.TestCase):
     def test_status_presentation_is_selected_outside_the_analysis_core(self):
         self.assertEqual(translate("status.auth_required"), "Requires extended permission")
         self.assertEqual(translate("unknown.message_id"), "unknown.message_id")
+
 
 if __name__ == "__main__":
     unittest.main()
