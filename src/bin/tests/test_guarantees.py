@@ -1,4 +1,4 @@
-"""Static checks for the product guarantees in the README."""
+"""Static checks for the product guarantees in README.md."""
 
 import ast
 import re
