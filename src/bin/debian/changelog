@@ -5,13 +5,13 @@ mojitoshield (0.1.3) unstable; urgency=low
   * Make the Extended scan button stand out next to the summary.
   * Stop Tab in the detail text after one step; proper plurals in texts.
 
- -- MojitoShield contributors <maintainers@mojitoshield.invalid>  Tue, 13 Oct 2026 17:30:00 +0200
+ -- Fimbul-Labs <339061086+Fimbul-Labs@users.noreply.github.com>  Tue, 13 Oct 2026 17:30:00 +0200
 
 mojitoshield (0.1.2) unstable; urgency=low
 
   * Check boot menu protection: disk encryption or an active GRUB password.
 
- -- MojitoShield contributors <maintainers@mojitoshield.invalid>  Sun, 11 Oct 2026 20:37:47 +0200
+ -- Fimbul-Labs <339061086+Fimbul-Labs@users.noreply.github.com>  Sun, 11 Oct 2026 20:37:47 +0200
 
 mojitoshield (0.1.1) unstable; urgency=low
 
@@ -19,10 +19,10 @@ mojitoshield (0.1.1) unstable; urgency=low
   * Keep the check list at a fixed width and detail lines readable in wide windows.
   * Depend on pkexec and polkitd instead of transitional policykit-1.
 
- -- MojitoShield contributors <maintainers@mojitoshield.invalid>  Sun, 11 Oct 2026 20:29:36 +0200
+ -- Fimbul-Labs <339061086+Fimbul-Labs@users.noreply.github.com>  Sun, 11 Oct 2026 20:29:36 +0200
 
 mojitoshield (0.1.0) unstable; urgency=low
 
   * Initial prototype package.
 
- -- MojitoShield contributors <maintainers@mojitoshield.invalid>  Fri, 09 Oct 2026 00:00:00 +0000
+ -- Fimbul-Labs <339061086+Fimbul-Labs@users.noreply.github.com>  Fri, 09 Oct 2026 00:00:00 +0000

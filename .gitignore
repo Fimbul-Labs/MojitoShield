@@ -5,3 +5,5 @@ Mint-distros
 .vscode
 .ruff_cache
 vscode
+# Private working notes, kept out of the public repository.
+notes
