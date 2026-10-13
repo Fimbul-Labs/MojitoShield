@@ -1,3 +1,7 @@
 venv
 .venv
 __pycache__
+Mint-distros
+.vscode
+.ruff_cache
+vscode
