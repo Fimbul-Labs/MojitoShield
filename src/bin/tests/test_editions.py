@@ -43,7 +43,7 @@ class EditionDataTests(CheckTestCase):
         self.start(
             patch(
                 "mojitoshield.system.run_command",
-                side_effect=lambda arguments: responses.get(tuple(arguments)),
+                side_effect=lambda arguments, timeout=None: responses.get(tuple(arguments)),
             )
         )
         self.start(

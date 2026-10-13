@@ -14,7 +14,9 @@ from datetime import datetime
 COMMAND_TIMEOUT_SECONDS = 3
 
 
-def run_command(arguments: list[str]) -> subprocess.CompletedProcess[str] | None:
+def run_command(
+    arguments: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS
+) -> subprocess.CompletedProcess[str] | None:
     """Run a read-only command and return its result, or None if it could not run.
 
     The C locale keeps the output in English, so parsing it does not depend on
@@ -31,7 +33,7 @@ def run_command(arguments: list[str]) -> subprocess.CompletedProcess[str] | None
             capture_output=True,
             text=True,
             env={**os.environ, "LANG": "C", "LC_ALL": "C", "LANGUAGE": "C"},
-            timeout=COMMAND_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError):
         return None

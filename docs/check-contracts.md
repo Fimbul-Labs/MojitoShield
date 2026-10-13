@@ -31,19 +31,25 @@ Statuses: **OK**, **Warning**, **Could not determine**, **Requires extended perm
 
 ### 2. System up to date (`updates`)
 
-- **Question:** Are updates actually being installed?
-- **Reads:**
+- **Question:** Are security updates installed in time? (Decided 2026-10-13, after a fresh-install VM test showed that the earlier rule, "any `Upgrade:` line in the APT history within 30 days", gave OK on a system with 197 pending updates.)
+- **Reads** (all world-readable, no network):
   - Update Manager automation: the flag `/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled` plus `systemctl is-enabled mintupdate-automation-upgrade.timer`.
   - APT unattended-upgrades: `/etc/apt/apt.conf.d/20auto-upgrades`.
-  - The date of the latest entry with `Upgrade:` in `/var/log/apt/history.log`, falling back to `history.log.1.gz` (both world-readable).
+  - The `Date:` field of the security archive's package list, `/var/lib/apt/lists/*-security_*Release`. The files keep the server's date, not the download time; security archives are republished several times a day, so an old date means an old download.
+  - Pending upgrades from `apt-get -s dist-upgrade` (a simulation that changes nothing). An `Inst` line counts as a security update when one of its archives ends in `-security` (Ubuntu `noble-security`, Debian `stable-security`).
+  - The newest **full update** in `/var/log/apt/history.log`, falling back to `history.log.1.gz`: an entry with `Upgrade:` whose command is Update Manager (`aptkit`, earlier `aptdaemon`), `unattended-upgrade`, or `apt`/`apt-get` with `upgrade`, `full-upgrade` or `dist-upgrade`. `apt install` does not count, even when it upgrades a package. An entry without a command line (Synaptic, older Update Manager) counts only after the installation finished, read from the time of `/var/log/installer`, because the installer also upgrades a few packages and records no command line.
   - `/var/run/reboot-required` and its modification time.
 - **Result:**
   - A reboot has been pending for more than 7 days → **Warning**. Next step: restart the computer so installed fixes take effect.
   - Automatic updates are on → **OK**.
-  - Updates were installed within the last 30 days → **OK**.
-  - Updates were last installed more than 30 days ago → **Warning**. Next step: open Update Manager and install the updates, or turn on automatic updates in its preferences.
-  - No update history can be read → **Could not determine**.
-- **Cannot conclude:** whether all available security updates are installed. Checking that would need a fresh package list, and the app works offline.
+  - No security package list is found → **Could not determine**. Next step: open Update Manager and click Refresh.
+  - The security list was published more than 14 days ago → **Warning**: the computer has not looked for updates. Next step: connect to the internet, open Update Manager and click Refresh.
+  - The simulation fails → **Could not determine**.
+  - No security updates are pending → **OK**.
+  - Security updates are pending and a full update ran within 14 days → **OK**: they are at most about 14 days old.
+  - Security updates are pending and no full update within 14 days, or none recorded → **Warning**, with the number. Next step: open Update Manager and install the updates, or turn on automatic updates.
+- **Why 14 days:** Cyber Essentials requires critical and high security updates within 14 days of release. Only security updates count, so the Warning stays rare and important.
+- **Cannot conclude:** how long a pending update has been available (the lists have no per-package dates), whether an update the user deselected matters, or whether an `aptkit` entry was Software Manager installing a program rather than Update Manager.
 
 ### 3. Screen lock (`screen-lock`)
 

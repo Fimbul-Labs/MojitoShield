@@ -29,6 +29,7 @@ LIST_MIN_SIZE = (280, 220)
 STACKED_LIST_SHARE = 0.48
 DETAIL_MAX_WIDTH_CHARS = 72
 PENDING_ICON = "content-loading-symbolic"
+EXTENDED_SCAN_ICON = "dialog-password-symbolic"
 STATUS_ICONS = {
     Status.OK: "emblem-default-symbolic",
     Status.WARNING: "dialog-warning-symbolic",
@@ -148,10 +149,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         set_margins(outer, top=16, bottom=16, start=20, end=20)
         self.add(outer)
 
-        self.summary_label = Gtk.Label()
-        self.summary_label.set_xalign(0)
-        self.summary_label.set_line_wrap(True)
-        outer.pack_start(self.summary_label, False, False, 0)
+        outer.pack_start(self._build_summary(), False, False, 0)
 
         self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.main_paned.set_wide_handle(True)
@@ -188,11 +186,27 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         refresh_button.set_action_name("win.refresh")
         header.pack_end(refresh_button)
 
+    def _build_summary(self) -> Gtk.Widget:
+        """The summary line, with the Extended scan button next to it when a check needs it."""
+        summary = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self.summary_label = Gtk.Label()
+        self.summary_label.set_xalign(0)
+        self.summary_label.set_line_wrap(True)
+        summary.pack_start(self.summary_label, True, True, 0)
+
         self.extended_button = Gtk.Button(label=translate("app.extended_scan"))
+        self.extended_button.set_image(
+            Gtk.Image.new_from_icon_name(EXTENDED_SCAN_ICON, Gtk.IconSize.BUTTON)
+        )
+        self.extended_button.set_always_show_image(True)
+        self.extended_button.set_valign(Gtk.Align.CENTER)
+        # The theme's highlight colour, so the button stands out as the next step.
+        self.extended_button.get_style_context().add_class("suggested-action")
         self.extended_button.connect("clicked", lambda _button: self._start_extended_scan())
         # Shown only when a check needs permission, so show_all() must not show it.
         self.extended_button.set_no_show_all(True)
-        header.pack_end(self.extended_button)
+        summary.pack_end(self.extended_button, False, False, 0)
+        return summary
 
     def _build_check_list(self) -> Gtk.Widget:
         self.check_list = Gtk.ListBox()
@@ -232,10 +246,11 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         self.detail_heading = heading_label(translate("app.details"))
         detail_box.pack_start(self.detail_heading, False, False, 8)
 
-        self.detail_explanation = wrapping_label(selectable=True)
+        # Only the result text can be selected, so Tab stops in the details once.
+        self.detail_explanation = wrapping_label()
         detail_box.pack_start(self.detail_explanation, False, False, 0)
 
-        self.detail_evidence = wrapping_label(selectable=True)
+        self.detail_evidence = wrapping_label()
         self.detail_evidence.set_no_show_all(True)
         detail_box.pack_start(self.detail_evidence, False, False, 0)
 

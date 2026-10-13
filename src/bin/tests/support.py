@@ -26,7 +26,7 @@ def completed(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProc
 def fake_commands(responses: CommandResponses):
     """Answer system.run_command by the longest matching argument prefix; others give None."""
 
-    def run_command(arguments: list[str]):
+    def run_command(arguments: list[str], timeout: float | None = None):
         for length in range(len(arguments), 0, -1):
             key = tuple(arguments[:length])
             if key in responses:

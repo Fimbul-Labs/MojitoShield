@@ -54,6 +54,7 @@ PRESENCE_PATHS = (
     network_services.SSH_CONFIG,
     apparmor.APPARMOR_ENABLED,
     boot_menu.GRUB_SCRIPTS,
+    updates.INSTALLER_LOGS,
 )
 
 
@@ -71,14 +72,13 @@ def service_commands() -> list[list[str]]:
     return [
         ["systemctl", "is-active", "ufw"],
         ["systemctl", "is-enabled", updates.MINTUPDATE_UPGRADE_TIMER],
-        # Simulated: lists pending upgrades and their archives without changing anything.
-        ["apt-get", "-s", "dist-upgrade"],
+        updates.PENDING_UPGRADES_COMMAND,
     ]
 
 
 def command_record(arguments: list[str]) -> dict[str, object]:
     # The same runner as the checks, so the output has the same C locale.
-    command = system.run_command(arguments)
+    command = system.run_command(arguments, timeout=updates.PENDING_UPGRADES_TIMEOUT_SECONDS)
     if command is None:
         return {"arguments": arguments, "available": False}
     return {
@@ -135,6 +135,11 @@ def package_lists() -> dict[str, dict[str, str]]:
     return lists
 
 
+def installation_finished() -> str | None:
+    finished = updates._installation_finished()
+    return None if finished is None else finished.isoformat(timespec="seconds")
+
+
 def history_entries() -> list[dict[str, object]]:
     """One summary per APT history entry: when, which tool, and how many packages changed.
 
@@ -175,6 +180,7 @@ def collect() -> dict[str, object]:
             command_record(arguments)
             for arguments in [*screen_lock_commands(), *service_commands()]
         ],
+        "installation_finished": installation_finished(),
         "package_lists": package_lists(),
         "apt_history": history_entries(),
     }

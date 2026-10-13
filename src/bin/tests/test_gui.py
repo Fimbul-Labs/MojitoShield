@@ -122,6 +122,26 @@ class WindowSmokeTests(unittest.TestCase):
         self.assertFalse(window.extended_button.get_sensitive())
         self.assertEqual(window.extended_button.get_label(), "Extended scan (not installed)")
 
+    def test_extended_scan_button_stands_out_next_to_the_summary(self):
+        window = self.open_window(fake_results(frozenset({"firewall"})))
+        self.assertTrue(wait_until(lambda: self.scan_finished(window)))
+
+        button = window.extended_button
+        self.assertIs(button.get_parent(), window.summary_label.get_parent())
+        self.assertTrue(button.get_style_context().has_class("suggested-action"))
+        self.assertTrue(button.get_always_show_image())
+
+    def test_details_have_one_tab_stop(self):
+        window = self.open_window(fake_results())
+        self.assertTrue(wait_until(lambda: self.scan_finished(window)))
+
+        detail_labels = (
+            window.detail_result,
+            window.detail_explanation,
+            window.detail_evidence,
+        )
+        self.assertEqual([label.get_selectable() for label in detail_labels], [True, False, False])
+
     def test_wide_window_keeps_list_width_and_readable_detail_lines(self):
         window = self.open_window(fake_results())
         window.resize(1600, 900)

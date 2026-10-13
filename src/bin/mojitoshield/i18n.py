@@ -6,7 +6,19 @@ leaves room to add translated catalogs later without touching the checks.
 
 from __future__ import annotations
 
-ENGLISH = {
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Plural:
+    """Text that depends on a number: `one` when the value named `count` is 1, else `other`."""
+
+    count: str
+    one: str
+    other: str
+
+
+ENGLISH: dict[str, str | Plural] = {
     "app.title": "MojitoShield",
     "app.unknown_distribution": "an unknown distribution",
     "app.unsupported.title": "MojitoShield is designed for Linux Mint",
@@ -22,8 +34,8 @@ ENGLISH = {
     "app.extended_cancelled": "Extended scan was cancelled. Those checks remain incomplete.",
     "app.extended_failed": "Extended scan failed. Those checks remain incomplete.",
     "app.scan_failed": "The scan could not be completed. Try again.",
-    "app.summary": "Scan complete: {ok} OK, {warning} warning(s), {unknown} could not determine, {auth} require extended permission.",
-    "app.summary_incomplete": "Basic scan finished, but not complete: {ok} OK, {warning} warning(s), {unknown} could not determine. {auth} still require extended permission.",
+    "app.summary": "Scan complete. OK: {ok}, Warning: {warning}, Could not determine: {unknown}.",
+    "app.summary_incomplete": "Basic scan finished, but not complete. OK: {ok}, Warning: {warning}, Could not determine: {unknown}, Requires extended permission: {auth}.",
     "app.check_list": "Security checks",
     "app.footer": "MojitoShield performs local read-only checks. Results are guidance, not a complete security audit.",
     "app.details": "What is checked?",
@@ -40,7 +52,7 @@ ENGLISH = {
     "check.firewall.title": "Firewall",
     "check.firewall.description": "Reads whether the UFW firewall is turned on and running. It does not show which connections the firewall rules allow, and firewalls managed by other tools are not assessed.",
     "check.updates.title": "System up to date",
-    "check.updates.description": "Checks whether updates are installed automatically, when updates were last installed, and whether a restart is waiting. It cannot tell whether every available security update is installed, because the app works offline.",
+    "check.updates.description": "Checks whether security updates are waiting to be installed, using the list of updates the computer last downloaded. Automatic updates, or a full update within the last 14 days, count as up to date. It also checks whether a restart is waiting.",
     "check.screen-lock.title": "Screen lock",
     "check.screen-lock.description": "Checks that the screen locks by itself after a period without use, in Cinnamon, MATE or Xfce. Programs that keep the screen awake, such as video players, are not taken into account.",
     "check.auto-login.title": "Automatic login",
@@ -67,16 +79,36 @@ ENGLISH = {
     "firewall.unrecognized_status": "UFW returned an unrecognized status.",
     "updates.reboot_pending": "Updates were installed, but a restart has been waiting for {days} days. Restart the computer so that the fixes take effect.",
     "updates.automatic": "Updates are installed automatically.",
-    "updates.recently_installed": "Updates were last installed {days} day(s) ago.",
-    "updates.not_installed_recently": "Updates were last installed {days} days ago. Open Update Manager and install the available updates, or turn on automatic updates in its preferences.",
-    "updates.history_unavailable": "No record of installed updates could be found.",
+    "updates.lists_unavailable": "The list of available updates could not be found, so missing security updates cannot be seen. Open Update Manager and click Refresh.",
+    "updates.lists_outdated": "The computer has not looked for updates for {days} days, so missing security updates cannot be seen. Connect to the internet, open Update Manager and click Refresh.",
+    "updates.pending_unavailable": "The list of waiting updates could not be read.",
+    "updates.no_security_updates_pending": "No security updates are waiting to be installed.",
+    "updates.security_updates_recent": Plural(
+        "count",
+        "1 security update is waiting. The last full update was less than 14 days ago, so this is normal; Update Manager will offer it.",
+        "{count} security updates are waiting. The last full update was less than 14 days ago, so this is normal; Update Manager will offer them.",
+    ),
+    "updates.security_updates_pending": Plural(
+        "count",
+        "1 security update is waiting, and the last full update was {days} days ago. Open Update Manager and install the updates, or turn on automatic updates in its preferences.",
+        "{count} security updates are waiting, and the last full update was {days} days ago. Open Update Manager and install the updates, or turn on automatic updates in its preferences.",
+    ),
+    "updates.security_updates_pending_no_update": Plural(
+        "count",
+        "1 security update is waiting, and no full update has been recorded. Open Update Manager and install the updates, or turn on automatic updates in its preferences.",
+        "{count} security updates are waiting, and no full update has been recorded. Open Update Manager and install the updates, or turn on automatic updates in its preferences.",
+    ),
     "screen_lock.desktop_not_supported": "The desktop environment could not be identified as Cinnamon, MATE or Xfce.",
     "screen_lock.settings_unavailable": "The screen lock could not be checked through {desktop} settings.",
     "screen_lock.disabled": "{desktop} is set not to lock the screen. You can turn on locking in the screensaver settings.",
     "screen_lock.unrecognized_result": "{desktop} returned an unrecognized screen-lock value.",
     "screen_lock.never_automatic": "{desktop} only locks the screen when you lock it yourself. You can set a delay in the screensaver settings.",
     "screen_lock.idle_delay_unavailable": "Locking is turned on in {desktop}, but the delay before it locks could not be read.",
-    "screen_lock.enabled": "{desktop} locks the screen after {minutes} minute(s) without use.",
+    "screen_lock.enabled": Plural(
+        "minutes",
+        "{desktop} locks the screen after 1 minute without use.",
+        "{desktop} locks the screen after {minutes} minutes without use.",
+    ),
     "auto_login.display_manager_unknown": "The login screen in use could not be identified.",
     "auto_login.display_manager_not_supported": "The login screen ({display_manager}) is not LightDM, so its settings are not checked.",
     "auto_login.settings_unreadable": "The login screen settings could not be read.",
@@ -89,7 +121,11 @@ ENGLISH = {
     "timeshift.separate_device": "Timeshift saves snapshots on another device, which was not inspected.",
     "timeshift.snapshots_unreadable": "The Timeshift snapshot folder could not be read.",
     "timeshift.no_snapshots": "Timeshift is set up but has no snapshots. Open Timeshift and create one, or check that scheduled snapshots are turned on.",
-    "timeshift.recent_snapshot": "The newest system snapshot is {days} day(s) old. A restore has not been tested, and personal files are not included by default.",
+    "timeshift.recent_snapshot": Plural(
+        "days",
+        "The newest system snapshot is 1 day old. A restore has not been tested, and personal files are not included by default.",
+        "The newest system snapshot is {days} days old. A restore has not been tested, and personal files are not included by default.",
+    ),
     "timeshift.snapshot_too_old": "The newest system snapshot is {days} days old, longer than the expected {limit} days. Open Timeshift and check that scheduled snapshots work.",
     "network_services.status_unreadable": "The list of network connections could not be read.",
     "network_services.none": "No programs accept connections from other computers.",
@@ -123,6 +159,8 @@ ENGLISH = {
 
 def translate(message_id: str, **values: str) -> str:
     template = ENGLISH.get(message_id, message_id)
+    if isinstance(template, Plural):
+        template = template.one if values.get(template.count) == "1" else template.other
     try:
         return template.format(**values)
     except (KeyError, ValueError):
