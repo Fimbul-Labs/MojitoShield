@@ -5,7 +5,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from mojitoshield_core import PRIVILEGED_HELPER_PATH, PRIVILEGED_POLICY_PATH
+from mojitoshield.privileged import PRIVILEGED_HELPER_PATH, PRIVILEGED_POLICY_PATH
 
 SOURCE_ROOT = Path(__file__).parents[1]
 
@@ -19,10 +19,10 @@ class DebianPackagingTests(unittest.TestCase):
             if line.strip()
         ]
 
-    def test_every_installed_source_file_exists(self):
+    def test_every_installed_source_exists(self):
         for source, _destination in self._install_entries():
             with self.subTest(source=source):
-                self.assertTrue((SOURCE_ROOT / source).is_file())
+                self.assertTrue((SOURCE_ROOT / source).exists())
 
     def test_install_destinations_are_directories(self):
         # dh_install cannot rename files; a destination is always a directory.
@@ -42,29 +42,29 @@ class DebianPackagingTests(unittest.TestCase):
         self.assertIn("mojitoshield_privileged.py", rules)
         self.assertIn(f"debian/mojitoshield{PRIVILEGED_HELPER_PATH}", rules)
 
-    def test_launcher_runs_the_installed_application(self):
-        launcher = (SOURCE_ROOT / "mojitoshield").read_text(encoding="utf-8")
-        destinations = {
-            "/" + destination + Path(source).name
-            for source, destination in self._install_entries()
-        }
-        installed_app = next(path for path in destinations if path.endswith("/mojitoshield.py"))
-        self.assertIn(installed_app, launcher)
+    def test_launcher_runs_the_installed_package(self):
+        rules = (SOURCE_ROOT / "debian/rules").read_text(encoding="utf-8")
+        self.assertIn("launcher.py debian/mojitoshield/usr/bin/mojitoshield", rules)
+        self.assertIn(("mojitoshield", "usr/lib/mojitoshield/"), self._install_entries())
+        launcher = (SOURCE_ROOT / "launcher.py").read_text(encoding="utf-8")
+        self.assertIn('sys.path.insert(0, "/usr/lib/mojitoshield")', launcher)
 
     def test_package_requires_the_python_version_the_code_uses(self):
         # platform.freedesktop_os_release and runtime "X | Y" unions need Python 3.10.
         control = (SOURCE_ROOT / "debian/control").read_text(encoding="utf-8")
         self.assertRegex(control, r"(?m)^Depends:.*\bpython3 \(>= 3\.10\)")
 
-    def test_helper_runs_python_in_isolated_mode(self):
-        helper = SOURCE_ROOT / "mojitoshield_privileged.py"
-        first_line = helper.read_text(encoding="utf-8").splitlines()[0]
-        self.assertEqual(first_line, "#!/usr/bin/python3 -I")
+    def test_installed_programs_run_python_in_isolated_mode(self):
+        # Isolated mode keeps Python from importing files from the current folder.
+        for name in ("mojitoshield_privileged.py", "launcher.py"):
+            first_line = (SOURCE_ROOT / name).read_text(encoding="utf-8").splitlines()[0]
+            with self.subTest(program=name):
+                self.assertEqual(first_line, "#!/usr/bin/python3 -I")
 
 
 class ApplicationIdentityTests(unittest.TestCase):
     def application_id(self) -> str:
-        gui_source = (SOURCE_ROOT / "mojitoshield.py").read_text(encoding="utf-8")
+        gui_source = (SOURCE_ROOT / "mojitoshield/app.py").read_text(encoding="utf-8")
         return re.search(r'^APPLICATION_ID = "([^"]+)"$', gui_source, re.M).group(1)
 
     def test_desktop_entry_metainfo_and_icon_share_the_application_id(self):

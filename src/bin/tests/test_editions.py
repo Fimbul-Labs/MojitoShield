@@ -10,9 +10,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import mojitoshield_core as core
-from mojitoshield_core import Status
-from test_checks import CheckTestCase, completed, run
+from mojitoshield.checks import screen_lock
+from mojitoshield.distribution import identify_distribution
+from mojitoshield.results import Status
+from support import CheckTestCase, completed
 
 EDITIONS = Path(__file__).parent / "data/editions"
 
@@ -39,7 +40,7 @@ class EditionDataTests(CheckTestCase):
         }
         self.start(
             patch(
-                "mojitoshield_core._run_command",
+                "mojitoshield.system.run_command",
                 side_effect=lambda arguments: responses.get(tuple(arguments)),
             )
         )
@@ -53,16 +54,16 @@ class EditionDataTests(CheckTestCase):
     def test_every_edition_is_identified_as_mint(self):
         for name, edition in load_editions().items():
             with self.subTest(edition=name):
-                self.assertTrue(core.identify_distribution(edition["os_release"]))
+                self.assertTrue(identify_distribution(edition["os_release"]))
 
     def test_screen_lock_matches_the_confirmed_result(self):
         for name, edition in load_editions().items():
             with self.subTest(edition=name):
                 self.replay(edition)
-                result = run("screen-lock")
+                outcome = screen_lock.check()
                 status, message_id, minutes = EXPECTED[name]
-                self.assertEqual((result.status, result.message_id), (status, message_id))
-                self.assertEqual(dict(result.data).get("minutes"), minutes)
+                self.assertEqual((outcome.status, outcome.message_id), (status, message_id))
+                self.assertEqual(outcome.data.get("minutes"), minutes)
 
 
 if __name__ == "__main__":

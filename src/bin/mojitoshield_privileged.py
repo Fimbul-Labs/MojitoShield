@@ -71,7 +71,7 @@ def _firewall() -> dict[str, object]:
 
 
 def _grub_password_configured(text: str) -> bool:
-    # Same rule as mojitoshield_core.grub_password_configured; the helper imports nothing from the app.
+    # Same rule as mojitoshield.checks.boot_menu.grub_password_configured; the helper imports nothing from the app.
     lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
     superusers = any(
         re.match(r"""^set\s+superusers\s*=\s*["']?[^"'\s]+""", line) for line in lines
@@ -125,7 +125,8 @@ def main(arguments: list[str]) -> int:
     try:
         results = [CHECKS[check_id]() for check_id in arguments]
         output = json.dumps({"version": 1, "results": results}, ensure_ascii=False)
-    except Exception:
+    except Exception:  # noqa: BLE001
+        # Running as root, the helper reports only "failed", never error details.
         return 1
 
     if len(output.encode("utf-8")) > 12_000:

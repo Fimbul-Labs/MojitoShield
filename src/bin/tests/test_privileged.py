@@ -9,15 +9,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 import mojitoshield_privileged as helper
-from mojitoshield_core import (
+from mojitoshield.checks.boot_menu import grub_password_configured
+from mojitoshield.privileged import (
     PKEXEC_PATH,
+    PRIVILEGED_CHECK_IDS,
     PRIVILEGED_HELPER_PATH,
     PrivilegedHelperUnavailable,
     PrivilegedScanCancelled,
     PrivilegedScanFailed,
-    _is_trusted_system_path,
+    is_trusted_system_path,
+    parse_helper_output,
     run_privileged_checks,
 )
+from mojitoshield.results import Status
 
 
 def _fake_stat(file_mode: int, file_uid: int = 0, directory_mode: int = 0o755):
@@ -39,7 +43,7 @@ class TrustedPathTests(unittest.TestCase):
             patch.object(Path, "resolve", lambda path, strict=False: path),
             patch.object(Path, "stat", _fake_stat(**stat_options)),
         ):
-            return _is_trusted_system_path(self.path, executable=executable)
+            return is_trusted_system_path(self.path, executable=executable)
 
     def test_root_owned_policy_file_is_trusted_without_execute_bit(self):
         self.assertTrue(self._is_trusted(executable=False, file_mode=0o644))
@@ -58,7 +62,7 @@ class TrustedPathTests(unittest.TestCase):
 
     def test_missing_file_is_not_trusted(self):
         self.assertFalse(
-            _is_trusted_system_path(Path("/nonexistent/mojitoshield"), executable=False)
+            is_trusted_system_path(Path("/nonexistent/mojitoshield"), executable=False)
         )
 
 
@@ -130,8 +134,8 @@ class PrivilegedHelperTests(unittest.TestCase):
         process = subprocess.CompletedProcess([], 0, response, "")
 
         with (
-            patch("mojitoshield_core.privileged_helper_available", return_value=True),
-            patch("mojitoshield_core.subprocess.run", return_value=process) as run,
+            patch("mojitoshield.privileged.privileged_helper_available", return_value=True),
+            patch("mojitoshield.privileged.subprocess.run", return_value=process) as run,
         ):
             (result,) = run_privileged_checks(("firewall",))
 
@@ -140,11 +144,9 @@ class PrivilegedHelperTests(unittest.TestCase):
             [str(PKEXEC_PATH), str(PRIVILEGED_HELPER_PATH), "firewall"],
         )
         self.assertNotIn("shell", run.call_args.kwargs)
-        self.assertEqual(result.message_id, "firewall.active")
+        self.assertEqual(result.outcome.message_id, "firewall.active")
 
     def test_helper_and_app_agree_on_grub_passwords(self):
-        from mojitoshield_core import grub_password_configured
-
         samples = (
             'set superusers="admin"\npassword_pbkdf2 admin grub.pbkdf2.sha512.10000.ABC',
             "set superusers=admin\npassword admin secret",
@@ -182,11 +184,11 @@ class PrivilegedHelperTests(unittest.TestCase):
     def test_dismissed_authorization_dialog_is_reported_as_cancelled(self):
         process = subprocess.CompletedProcess([], 126, "", "")
         with (
-            patch("mojitoshield_core.privileged_helper_available", return_value=True),
-            patch("mojitoshield_core.subprocess.run", return_value=process),
+            patch("mojitoshield.privileged.privileged_helper_available", return_value=True),
+            patch("mojitoshield.privileged.subprocess.run", return_value=process),
+            self.assertRaises(PrivilegedScanCancelled),
         ):
-            with self.assertRaises(PrivilegedScanCancelled):
-                run_privileged_checks(("firewall",))
+            run_privileged_checks(("firewall",))
 
     def test_helper_failure_and_timeout_are_reported_as_failed(self):
         failures = (
@@ -197,19 +199,19 @@ class PrivilegedHelperTests(unittest.TestCase):
         for failure in failures:
             with (
                 self.subTest(failure=failure),
-                patch("mojitoshield_core.privileged_helper_available", return_value=True),
-                patch("mojitoshield_core.subprocess.run", **failure),
+                patch("mojitoshield.privileged.privileged_helper_available", return_value=True),
+                patch("mojitoshield.privileged.subprocess.run", **failure),
+                self.assertRaises(PrivilegedScanFailed),
             ):
-                with self.assertRaises(PrivilegedScanFailed):
-                    run_privileged_checks(("firewall",))
+                run_privileged_checks(("firewall",))
 
     def test_missing_helper_is_detected_before_pkexec_starts(self):
         with (
-            patch("mojitoshield_core.privileged_helper_available", return_value=False),
-            patch("mojitoshield_core.subprocess.run") as run,
+            patch("mojitoshield.privileged.privileged_helper_available", return_value=False),
+            patch("mojitoshield.privileged.subprocess.run") as run,
+            self.assertRaises(PrivilegedHelperUnavailable),
         ):
-            with self.assertRaises(PrivilegedHelperUnavailable):
-                run_privileged_checks(("firewall",))
+            run_privileged_checks(("firewall",))
         run.assert_not_called()
 
     def test_policy_action_points_to_the_fixed_helper_and_does_not_cache_auth(self):
@@ -235,6 +237,42 @@ class PrivilegedHelperTests(unittest.TestCase):
                 for element in action.findall("defaults/*")
             )
         )
+
+
+class HelperAnswerTests(unittest.TestCase):
+    def answer(self, *entries: dict) -> str:
+        return json.dumps({"version": 1, "results": list(entries)})
+
+    def test_answer_becomes_a_language_neutral_result(self):
+        output = self.answer(
+            {
+                "check_id": "firewall",
+                "status": "ok",
+                "message_id": "firewall.active",
+                "evidence": "status: active",
+            }
+        )
+        (result,) = parse_helper_output(("firewall",), output)
+        self.assertEqual(result.check_id, "firewall")
+        self.assertEqual(
+            (result.outcome.status, result.outcome.message_id), (Status.OK, "firewall.active")
+        )
+
+    def test_answer_cannot_contain_an_unrequested_check(self):
+        output = self.answer(
+            {"check_id": "timeshift", "status": "unknown", "message_id": "timeshift.unknown"}
+        )
+        with self.assertRaises(PrivilegedScanFailed):
+            parse_helper_output(("firewall",), output)
+
+    def test_unallowlisted_check_is_rejected_before_authentication(self):
+        self.assertEqual(PRIVILEGED_CHECK_IDS, {"firewall", "boot-menu"})
+        with (
+            patch("mojitoshield.privileged.privileged_helper_available") as is_available,
+            self.assertRaises(ValueError),
+        ):
+            run_privileged_checks(("run-arbitrary-command",))
+        is_available.assert_not_called()
 
 
 if __name__ == "__main__":

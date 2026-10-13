@@ -20,31 +20,41 @@ import sys
 from datetime import date
 from pathlib import Path
 
-import mojitoshield_core as core
+from mojitoshield import system
+from mojitoshield.checks import (
+    apparmor,
+    auto_login,
+    boot_menu,
+    firewall,
+    network_services,
+    screen_lock,
+    timeshift,
+    updates,
+)
 
 FORMAT_VERSION = 1
 OS_RELEASE_FIELDS = ("ID", "ID_LIKE", "NAME", "PRETTY_NAME", "VERSION_ID", "VERSION_CODENAME")
 
 # The checks decide from whether these exist, not from what they contain.
 PRESENCE_PATHS = (
-    core.UFW_CONFIG,
-    core.APT_AUTO_UPGRADES,
-    core.MINTUPDATE_AUTOMATION_SCRIPT,
-    core.MINTUPDATE_UPGRADE_FLAG,
-    core.DISPLAY_MANAGER_FILE,
-    *core.LIGHTDM_CONFIG_SOURCES,
-    core.TIMESHIFT_EXECUTABLE,
-    core.TIMESHIFT_CONFIG,
-    core.SSH_CONFIG,
-    core.APPARMOR_ENABLED,
-    core.GRUB_SCRIPTS,
+    firewall.UFW_CONFIG,
+    updates.APT_AUTO_UPGRADES,
+    updates.MINTUPDATE_AUTOMATION_SCRIPT,
+    updates.MINTUPDATE_UPGRADE_FLAG,
+    auto_login.DISPLAY_MANAGER_FILE,
+    *auto_login.LIGHTDM_CONFIG_SOURCES,
+    timeshift.TIMESHIFT_EXECUTABLE,
+    timeshift.TIMESHIFT_CONFIG,
+    network_services.SSH_CONFIG,
+    apparmor.APPARMOR_ENABLED,
+    boot_menu.GRUB_SCRIPTS,
 )
 
 
 def screen_lock_commands() -> list[list[str]]:
     """Every screen-lock query, for all desktops, so one file covers what any desktop would read."""
     commands = []
-    for settings in core.SCREEN_LOCK_SETTINGS.values():
+    for settings in screen_lock.SCREEN_LOCK_SETTINGS.values():
         commands.extend([settings.lock_query, settings.idle_delay_query])
         if settings.idle_enabled_query is not None:
             commands.append(settings.idle_enabled_query)
@@ -54,13 +64,13 @@ def screen_lock_commands() -> list[list[str]]:
 def service_commands() -> list[list[str]]:
     return [
         ["systemctl", "is-active", "ufw"],
-        ["systemctl", "is-enabled", core.MINTUPDATE_UPGRADE_TIMER],
+        ["systemctl", "is-enabled", updates.MINTUPDATE_UPGRADE_TIMER],
     ]
 
 
 def command_record(arguments: list[str]) -> dict[str, object]:
     # The same runner as the checks, so the output has the same C locale.
-    command = core._run_command(arguments)
+    command = system.run_command(arguments)
     if command is None:
         return {"arguments": arguments, "available": False}
     return {
@@ -81,14 +91,14 @@ def os_release_fields() -> dict[str, str]:
 
 def display_manager() -> str | None:
     try:
-        return Path(core.DISPLAY_MANAGER_FILE.read_text(encoding="utf-8").strip()).name
+        return Path(auto_login.DISPLAY_MANAGER_FILE.read_text(encoding="utf-8").strip()).name
     except (OSError, UnicodeError):
         return None
 
 
 def apparmor_enabled() -> str | None:
     try:
-        return core.APPARMOR_ENABLED.read_text(encoding="ascii").strip()
+        return apparmor.APPARMOR_ENABLED.read_text(encoding="ascii").strip()
     except (OSError, UnicodeError):
         return None
 

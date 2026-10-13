@@ -5,7 +5,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from mojitoshield_core import CHECKS, CheckResult, Status
+from mojitoshield.results import CheckResult, Outcome, Status
+from mojitoshield.scan import CHECKS
 
 try:
     import gi
@@ -18,21 +19,15 @@ except (ImportError, ValueError):
     GTK_AVAILABLE = False
 
 if GTK_AVAILABLE:
-    import mojitoshield as gui
+    from mojitoshield import app
 
 
 def fake_results(auth_required: frozenset[str] = frozenset()) -> tuple[CheckResult, ...]:
+    """Return OK for every check, except the given ones that need permission."""
+    needs_permission = Outcome(Status.AUTH_REQUIRED, "firewall.authorization_required")
+    ok = Outcome(Status.OK, "firewall.active")
     return tuple(
-        CheckResult(
-            check_id=definition.check_id,
-            level=definition.level,
-            status=Status.AUTH_REQUIRED if definition.check_id in auth_required else Status.OK,
-            message_id=(
-                "firewall.authorization_required"
-                if definition.check_id in auth_required
-                else "firewall.active"
-            ),
-        )
+        definition.result(needs_permission if definition.check_id in auth_required else ok)
         for definition in CHECKS
     )
 
@@ -68,14 +63,14 @@ class WindowSmokeTests(unittest.TestCase):
             return results
 
         patches = (
-            patch("mojitoshield_core.run_checks", side_effect=run_checks),
-            patch("mojitoshield.privileged_helper_available", return_value=False),
+            patch("mojitoshield.scan.run_checks", side_effect=run_checks),
+            patch("mojitoshield.privileged.privileged_helper_available", return_value=False),
         )
         for patcher in patches:
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        window = gui.MojitoShieldWindow(application)
+        window = app.MojitoShieldWindow(application)
         self.addCleanup(window.destroy)
         return window
 
@@ -88,13 +83,13 @@ class WindowSmokeTests(unittest.TestCase):
 
         rows = window.check_list.get_children()
         self.assertEqual(len(rows), 9)
-        self.assertEqual([row.check.level for row in rows], [1] * 7 + [2] * 2)
+        self.assertEqual([row.definition.level for row in rows], [1] * 7 + [2] * 2)
         headers = [row.get_header() for row in rows if row.get_header() is not None]
         self.assertEqual(
             [header.get_text() for header in headers],
             ["Level 1: everyday protection", "Level 2: physical access"],
         )
-        self.assertEqual(window.check_list.get_selected_row().check.check_id, "firewall")
+        self.assertEqual(window.check_list.get_selected_row().definition.check_id, "firewall")
         self.assertEqual(window.detail_title.get_text(), "Firewall")
         self.assertEqual(rows[0].get_accessible().get_name(), "Firewall: OK")
 
@@ -105,11 +100,16 @@ class WindowSmokeTests(unittest.TestCase):
 
         first_row = window.check_list.get_children()[0]
         self.assertEqual(first_row.status_label.get_text(), "Checking…")
+        self.assertEqual(window.detail_status_label.get_text(), "Checking…")
+        self.assertEqual(window.detail_result.get_text(), "Waiting for this check.")
         self.assertFalse(self.scan_finished(window))
 
         release.set()
         self.assertTrue(wait_until(lambda: self.scan_finished(window)))
         self.assertEqual(first_row.status_label.get_text(), "OK")
+        self.assertEqual(
+            window.detail_result.get_text(), "UFW reports that the firewall is active."
+        )
 
     def test_scan_is_not_called_complete_while_permission_is_missing(self):
         window = self.open_window(fake_results(frozenset({"firewall"})))
@@ -129,9 +129,9 @@ class WindowSmokeTests(unittest.TestCase):
         wait_until(lambda: False, timeout=0.1)
 
         self.assertEqual(window.main_paned.get_orientation(), Gtk.Orientation.HORIZONTAL)
-        self.assertEqual(window.main_paned.get_position(), gui.LIST_WIDTH)
+        self.assertEqual(window.main_paned.get_position(), app.LIST_WIDTH)
         self.assertEqual(
-            window.detail_explanation.get_max_width_chars(), gui.DETAIL_MAX_WIDTH_CHARS
+            window.detail_explanation.get_max_width_chars(), app.DETAIL_MAX_WIDTH_CHARS
         )
 
     def test_complete_scan_hides_extended_scan(self):

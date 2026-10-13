@@ -5,12 +5,24 @@ import re
 import unittest
 from pathlib import Path
 
-from mojitoshield_core import CHECKS, SCREEN_LOCK_SETTINGS, Status
-from mojitoshield_i18n import ENGLISH
+from mojitoshield.checks.screen_lock import SCREEN_LOCK_SETTINGS
+from mojitoshield.i18n import ENGLISH, translate
+from mojitoshield.results import Status
+from mojitoshield.scan import CHECKS
 
 SOURCE_ROOT = Path(__file__).parents[1]
-ANALYSIS_SOURCES = ("mojitoshield_core.py", "mojitoshield_privileged.py")
-ALL_SOURCES = (*ANALYSIS_SOURCES, "mojitoshield.py", "mojitoshield_i18n.py")
+PACKAGE = "mojitoshield"
+INTERFACE_SOURCES = ("mojitoshield/app.py", "mojitoshield/i18n.py")
+# Everything that inspects the system: the package without its interface, and the root helper.
+ANALYSIS_SOURCES = (
+    *sorted(
+        str(path.relative_to(SOURCE_ROOT))
+        for path in (SOURCE_ROOT / PACKAGE).rglob("*.py")
+        if str(path.relative_to(SOURCE_ROOT)) not in INTERFACE_SOURCES
+    ),
+    "mojitoshield_privileged.py",
+)
+ALL_SOURCES = (*ANALYSIS_SOURCES, *INTERFACE_SOURCES, "launcher.py")
 SYSTEMD_UNIT_SUFFIXES = (".service", ".socket", ".timer")
 MESSAGE_PREFIXES = (
     "firewall",
@@ -51,7 +63,7 @@ class TranslationCatalogTests(unittest.TestCase):
     def interface_message_ids(self) -> set[str]:
         message_ids = {
             node.args[0].value
-            for node in ast.walk(ast.parse(source("mojitoshield.py")))
+            for node in ast.walk(ast.parse(source("mojitoshield/app.py")))
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
             and node.func.id == "translate"
@@ -61,11 +73,11 @@ class TranslationCatalogTests(unittest.TestCase):
         # Keys chosen through variables, minus GTK action names that share the prefix.
         message_ids |= {
             value
-            for value in string_constants("mojitoshield.py")
+            for value in string_constants("mojitoshield/app.py")
             if re.match(r"^app\.[a-z_.]+$", value)
         } - {"app.quit"}
-        # Keys built at runtime from levels, statuses and the pending marker.
-        message_ids |= {"level.1", "level.2", "scan.pending"}
+        # Keys built at runtime from levels and statuses.
+        message_ids |= {"level.1", "level.2"}
         message_ids |= {f"status.{status.value}" for status in Status}
         return message_ids
 
@@ -97,43 +109,50 @@ class TranslationCatalogTests(unittest.TestCase):
         }
         self.assertEqual(sorted(set(ENGLISH) - used), [])
 
+    def test_unknown_message_id_is_shown_as_is(self):
+        self.assertEqual(translate("unknown.message_id"), "unknown.message_id")
+
 
 class OfflineAndReadOnlyTests(unittest.TestCase):
-    NETWORK_MODULES = {
-        "socket",
-        "ssl",
-        "http",
-        "urllib",
-        "ftplib",
-        "smtplib",
-        "requests",
-        "asyncio",
-        "xmlrpc",
-        "telnetlib",
-        "poplib",
-        "imaplib",
-    }
-    WRITING_METHODS = {
-        "write_text",
-        "write_bytes",
-        "unlink",
-        "rmdir",
-        "mkdir",
-        "rename",
-        "replace",
-        "chmod",
-        "chown",
-        "touch",
-        "symlink_to",
-        "hardlink_to",
-        "remove",
-        "removedirs",
-        "makedirs",
-        "rmtree",
-        "copy",
-        "copyfile",
-        "move",
-    }
+    NETWORK_MODULES = frozenset(
+        {
+            "socket",
+            "ssl",
+            "http",
+            "urllib",
+            "ftplib",
+            "smtplib",
+            "requests",
+            "asyncio",
+            "xmlrpc",
+            "telnetlib",
+            "poplib",
+            "imaplib",
+        }
+    )
+    WRITING_METHODS = frozenset(
+        {
+            "write_text",
+            "write_bytes",
+            "unlink",
+            "rmdir",
+            "mkdir",
+            "rename",
+            "replace",
+            "chmod",
+            "chown",
+            "touch",
+            "symlink_to",
+            "hardlink_to",
+            "remove",
+            "removedirs",
+            "makedirs",
+            "rmtree",
+            "copy",
+            "copyfile",
+            "move",
+        }
+    )
 
     def test_no_network_modules_are_imported(self):
         for name in ALL_SOURCES:
@@ -182,20 +201,21 @@ class OfflineAndReadOnlyTests(unittest.TestCase):
             )
             if query is not None
         ]
-        for node in ast.walk(ast.parse(source("mojitoshield_core.py"))):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "_run_command"
-                and node.args
-                and isinstance(node.args[0], ast.List)
-            ):
-                commands.append(
-                    [
-                        element.value if isinstance(element, ast.Constant) else None
-                        for element in node.args[0].elts
-                    ]
-                )
+        for name in ANALYSIS_SOURCES:
+            for node in ast.walk(ast.parse(source(name))):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "run_command"
+                    and node.args
+                    and isinstance(node.args[0], ast.List)
+                ):
+                    commands.append(
+                        [
+                            element.value if isinstance(element, ast.Constant) else None
+                            for element in node.args[0].elts
+                        ]
+                    )
 
         self.assertGreaterEqual(len(commands), 8)
         for arguments in commands:

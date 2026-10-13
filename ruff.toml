@@ -18,3 +18,9 @@ select = [
 # The formatter keeps code within the line length. Only long text strings,
 # such as the messages in the text catalog, may go past it.
 ignore = ["E501"]
+
+[lint.per-file-ignores]
+# GTK code must call gi.require_version() before importing from gi.repository.
+"src/bin/mojitoshield/app.py" = ["E402"]
+# The launcher must set the import path before importing the app.
+"src/bin/launcher.py" = ["E402"]

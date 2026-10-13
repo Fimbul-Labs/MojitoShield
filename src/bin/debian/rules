@@ -3,7 +3,9 @@
 %:
 	dh $@ --buildsystem=none
 
-# dh_install cannot rename files; the PolicyKit action points to this fixed path.
+# dh_install cannot rename files, so the two programs are installed here.
+# The PolicyKit action points to the helper's fixed path.
 execute_after_dh_install:
+	install -D -m 0755 launcher.py debian/mojitoshield/usr/bin/mojitoshield
 	install -D -m 0755 mojitoshield_privileged.py \
 		debian/mojitoshield/usr/libexec/mojitoshield/privileged-check

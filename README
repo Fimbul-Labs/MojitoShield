@@ -113,10 +113,18 @@ Run the unit tests and a GTK/startup test. Verify the app on Linux Mint and LMDE
 
 ## Project status
 
-A first GTK3 prototype is in `src/bin/mojitoshield.py`, with local check logic in `src/bin/mojitoshield_core.py`, the text catalog in `src/bin/mojitoshield_i18n.py` and tests in `src/bin/tests/`. Packaging files, desktop entry, AppStream metainfo, icon and a PolicyKit helper exist as a prototype, but the Debian package has not yet been built or installed. On a system with Python 3, PyGObject and GTK 3, the basic scan can be started from `src/bin` with:
+A first GTK3 prototype is in `src/bin/`. The app is the Python package `src/bin/mojitoshield/`:
+
+- `checks/`: the 9 checks, one module each, named after their contract in `docs/check-contracts.md`;
+- `results.py`, `system.py`, `distribution.py`, `scan.py`: result types, shared system access, distribution detection and running all checks;
+- `privileged.py`: the app side of the Extended scan;
+- `i18n.py`: the text catalog;
+- `app.py`: the GTK window.
+
+`mojitoshield_privileged.py` is the root helper for the Extended scan; it deliberately imports nothing from the package. `launcher.py` starts the installed app. The tests are in `src/bin/tests/`, one test file per check, and `src/bin/debian/` holds the Debian packaging. On a system with Python 3, PyGObject and GTK 3, the basic scan can be started from `src/bin` with:
 
 ```sh
-python3 mojitoshield.py
+python3 -m mojitoshield
 ```
 
 The tests are run from `src/bin` with:
@@ -124,6 +132,8 @@ The tests are run from `src/bin` with:
 ```sh
 python3 -m unittest discover -s tests
 ```
+
+The code style is set in `ruff.toml`. Check and format the code from the project folder with `ruff check` and `ruff format` (the Ruff extension for VS Code includes ruff).
 
 The prototype shows the 9 checks in two levels. The basic scan is language-independent and runs without sudo. Extended checks become available only from a trusted, installed Debian package; they cannot be run safely directly from a writable project directory. The prototype is not a finished security audit. The Debian package has not been built or installed; the build environment lacks `debhelper-compat`.
 
