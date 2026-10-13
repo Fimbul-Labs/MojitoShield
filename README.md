@@ -86,7 +86,7 @@ The extended scan only works from the installed package, because its helper must
 - `mojitoshield_privileged.py` is the root helper. It imports nothing from the app on purpose.
 - `debian/` holds the packaging.
 
-Code style is set in `ruff.toml`; run `ruff check` and `ruff format` before committing.
+Code style is set in `ruff.toml`; run `ruff check` and `ruff format` before committing. Public functions have Google-style docstrings with type hints, and the examples in them run as part of the tests.
 
 When you change a check, update its contract in `docs/check-contracts.md` first. A Warning needs concrete evidence and a next step a beginner can follow; when in doubt, use *Could not determine*. Please keep the app offline and read-only.
 

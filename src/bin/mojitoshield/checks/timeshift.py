@@ -22,6 +22,16 @@ TIMESHIFT_MAX_AGE_LIMIT_DAYS = 40
 
 @dataclass(frozen=True)
 class TimeshiftSettings:
+    """The parts of Timeshift's settings that tell where and when snapshots are made.
+
+    Attributes:
+        configured: Whether a snapshot device has been chosen and the first-run
+            setup is finished.
+        btrfs_mode: Whether Timeshift uses Btrfs snapshots instead of rsync.
+        schedules: The enabled schedules, such as ("daily", "boot").
+        backup_device_uuid: UUID of the device the snapshots are saved on.
+    """
+
     configured: bool
     btrfs_mode: bool
     schedules: tuple[str, ...]
@@ -29,7 +39,14 @@ class TimeshiftSettings:
 
 
 def parse_timeshift_settings(contents: str) -> TimeshiftSettings | None:
-    """Parse the Timeshift settings that tell where and when snapshots are made."""
+    """Parse the text of /etc/timeshift/timeshift.json.
+
+    Args:
+        contents: The JSON text of the settings file.
+
+    Returns:
+        The settings, or None when the text is not a valid settings object.
+    """
     try:
         settings = json.loads(contents)
     except json.JSONDecodeError:
@@ -54,7 +71,25 @@ def parse_timeshift_settings(contents: str) -> TimeshiftSettings | None:
 
 
 def timeshift_age_limit_days(schedules: Sequence[str]) -> float:
-    """Allow twice the most frequent schedule, within fixed bounds."""
+    """Decide how old the newest snapshot may be before it counts as too old.
+
+    The limit is twice the most frequent schedule, but at least 7 days, since
+    the computer may be turned off, and at most 40 days.
+
+    Args:
+        schedules: The enabled schedules, such as ("daily", "boot").
+
+    Returns:
+        The limit in days.
+
+    Examples:
+        >>> timeshift_age_limit_days(["daily"])
+        7
+        >>> timeshift_age_limit_days(["weekly"])
+        14
+        >>> timeshift_age_limit_days(["boot"])
+        40
+    """
     intervals = [
         TIMESHIFT_SCHEDULE_DAYS[name] for name in schedules if name in TIMESHIFT_SCHEDULE_DAYS
     ]
@@ -67,7 +102,19 @@ def timeshift_age_limit_days(schedules: Sequence[str]) -> float:
 
 
 def newest_snapshot_time(names: Iterable[str]) -> datetime | None:
-    """Return the newest time among snapshot folder names like 2026-10-02_22-07-41."""
+    """Find the newest snapshot from Timeshift's folder names.
+
+    Args:
+        names: Folder names in /timeshift/snapshots, such as
+            "2026-10-02_22-07-41". Names in another form are ignored.
+
+    Returns:
+        The newest snapshot's time, or None when no name is a snapshot time.
+
+    Examples:
+        >>> newest_snapshot_time(["2026-10-01_08-00-00", "2026-10-02_22-07-41", "notes"])
+        datetime.datetime(2026, 10, 2, 22, 7, 41)
+    """
     times = []
     for name in names:
         try:
@@ -85,6 +132,14 @@ def _root_filesystem_uuid() -> str | None:
 
 
 def check() -> Outcome:
+    """Check whether there is a recent Timeshift snapshot to go back to.
+
+    Returns:
+        OK when the newest snapshot is within the schedule's age limit, Warning
+        when it is too old or missing or Timeshift is not set up, and Could not
+        determine when the snapshots cannot be inspected without changing the
+        system.
+    """
     try:
         settings = parse_timeshift_settings(TIMESHIFT_CONFIG.read_text(encoding="utf-8"))
     except FileNotFoundError:

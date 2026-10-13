@@ -38,7 +38,21 @@ APT_UPGRADE_COMMANDS = ("upgrade", "full-upgrade", "dist-upgrade")
 
 
 def parse_apt_auto_updates(contents: str) -> bool | None:
-    """Parse the two APT periodic settings relevant to automatic updates."""
+    r"""Tell whether APT settings turn on automatic updates.
+
+    Args:
+        contents: The text of /etc/apt/apt.conf.d/20auto-upgrades.
+
+    Returns:
+        True when both Update-Package-Lists and Unattended-Upgrade are "1",
+        False when either is "0", or None when either is missing.
+
+    Examples:
+        >>> parse_apt_auto_updates('APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";')
+        True
+        >>> parse_apt_auto_updates('APT::Periodic::Update-Package-Lists "1";') is None
+        True
+    """
     keys = {
         "Update-Package-Lists": None,
         "Unattended-Upgrade": None,
@@ -59,10 +73,25 @@ def parse_apt_auto_updates(contents: str) -> bool | None:
 
 
 def is_full_update(commandline: str | None) -> bool:
-    """Return whether a history entry's command line is a whole-system update.
+    """Tell whether an APT history command line updated the whole system.
 
-    An entry without a command line comes from Synaptic or an older Update
-    Manager; the caller decides whether to trust it.
+    Update Manager (aptkit, earlier aptdaemon), unattended-upgrades and
+    `apt`/`apt-get` with upgrade, full-upgrade or dist-upgrade count;
+    installing a single program with `apt install` does not.
+
+    Args:
+        commandline: The Commandline field of a history entry, or None. An
+            entry without one comes from Synaptic, an older Update Manager or
+            the installer; the caller decides whether to trust it.
+
+    Returns:
+        True for a whole-system update.
+
+    Examples:
+        >>> is_full_update("aptkit role='role-install-packages' sender=':1.98'")
+        True
+        >>> is_full_update("/usr/bin/apt install ./mojitoshield_0.1.3_all.deb")
+        False
     """
     words = (commandline or "").split()
     if not words:
@@ -74,10 +103,17 @@ def is_full_update(commandline: str | None) -> bool:
 
 
 def latest_full_update(history: str, installed: datetime | None) -> datetime | None:
-    """Return the start of the newest entry that upgraded packages as a full update.
+    """Find when the last whole-system update started.
 
-    Entries without a command line count only after the installation finished,
-    because the installer also upgrades a few packages and records no command line.
+    Args:
+        history: The text of an APT history log.
+        installed: When the installation finished, or None if unknown.
+            Entries without a command line only count after it, because the
+            installer also upgrades a few packages and records no command line.
+
+    Returns:
+        The start of the newest entry that upgraded packages as a full
+        update, or None when there is none.
     """
     latest = None
     for block in re.split(r"\n\s*\n", history):
@@ -101,9 +137,23 @@ def latest_full_update(history: str, installed: datetime | None) -> datetime | N
 
 
 def count_pending_security_updates(simulation: str) -> int:
-    """Count the packages in `apt-get -s dist-upgrade` output that come from a security archive.
+    r"""Count the pending updates that come from a security archive.
 
-    A line looks like: Inst libc6 [2.39-0] (2.39-1 Ubuntu:24.04/noble-security [amd64])
+    Args:
+        simulation: Output of `apt-get -s dist-upgrade`, which lists each
+            package it would install on an "Inst" line with its archives.
+
+    Returns:
+        The number of packages offered by an archive whose name ends in
+        "-security", such as Ubuntu's noble-security or Debian's stable-security.
+
+    Examples:
+        >>> count_pending_security_updates(
+        ...     "Inst libc6 [2.39-0] (2.39-1 Ubuntu:24.04/noble-security [amd64])\n"
+        ...     "Conf libc6 (2.39-1 Ubuntu:24.04/noble-security [amd64])\n"
+        ...     "Inst mintupdate [7.0.0] (7.0.1 linuxmint:22.3/zena [all])\n"
+        ... )
+        1
     """
     return sum(
         1
@@ -113,7 +163,18 @@ def count_pending_security_updates(simulation: str) -> int:
 
 
 def release_fields(text: str) -> dict[str, str]:
-    """Return the single-line header fields of a Release or InRelease file."""
+    r"""Read the header fields of a Release or InRelease file.
+
+    Args:
+        text: The file's text; a signed InRelease file is handled too.
+
+    Returns:
+        The single-line fields by name, such as {"Suite": "noble-security"}.
+
+    Examples:
+        >>> release_fields("Origin: Ubuntu\nSuite: noble-security\nSHA256:\n abc 1 x\n")
+        {'Origin': 'Ubuntu', 'Suite': 'noble-security'}
+    """
     if text.startswith("-----BEGIN PGP SIGNED MESSAGE-----"):
         # A signed InRelease file: the fields start after the signature header.
         text = text.partition("\n\n")[2]
@@ -123,12 +184,22 @@ def release_fields(text: str) -> dict[str, str]:
         if not line.strip() or line.startswith(" "):
             break
         name, _, value = line.partition(":")
-        fields[name] = value.strip()
+        # A multi-line field, such as SHA256, has nothing after its colon.
+        if value.strip():
+            fields[name] = value.strip()
     return fields
 
 
 def release_date(text: str) -> datetime | None:
-    """Return the Date field of a Release or InRelease file, in local time without a zone."""
+    """Read when a package list was published.
+
+    Args:
+        text: The text of a Release or InRelease file.
+
+    Returns:
+        Its Date field as local time without a time zone, like system.now(),
+        or None when the field is missing or not a date.
+    """
     try:
         published = parsedate_to_datetime(release_fields(text)["Date"])
     except (KeyError, TypeError, ValueError):
@@ -217,6 +288,14 @@ def installation_finished() -> datetime | None:
 
 
 def check() -> Outcome:
+    """Check whether security updates are installed in time.
+
+    Returns:
+        OK with automatic updates, with no pending security updates, or when a
+        full update ran within 14 days; Warning when security updates have
+        waited longer, the package lists are old, or a restart has waited more
+        than 7 days; Could not determine when the lists cannot be read.
+    """
     reboot_days = _reboot_pending_days()
     if reboot_days is not None and reboot_days > REBOOT_PENDING_MAX_DAYS:
         return Outcome(

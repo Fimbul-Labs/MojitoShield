@@ -158,6 +158,24 @@ ENGLISH: dict[str, str | Plural] = {
 
 
 def translate(message_id: str, **values: str) -> str:
+    """Return the English text for a message ID, with its placeholders filled in.
+
+    Args:
+        message_id: A key in the catalog, such as "firewall.enabled".
+        **values: Values for the placeholders, such as days="3". For a Plural
+            text, the value it counts by chooses between its two forms.
+
+    Returns:
+        The finished text. An unknown ID is returned as it is, and a text
+        with missing values is returned unfilled, so the window never fails
+        because of a text.
+
+    Examples:
+        >>> translate("timeshift.recent_snapshot", days="1")[:36]
+        'The newest system snapshot is 1 day '
+        >>> translate("no.such.message")
+        'no.such.message'
+    """
     template = ENGLISH.get(message_id, message_id)
     if isinstance(template, Plural):
         template = template.one if values.get(template.count) == "1" else template.other

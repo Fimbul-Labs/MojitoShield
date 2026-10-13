@@ -14,13 +14,24 @@ select = [
     "SIM",     # simpler equivalent code
     "BLE",     # catching every exception
     "RUF",     # ruff's own checks
+    "D",       # pydocstyle: docstrings, in Google style (see below)
+    "ANN",     # type hints on every function
 ]
-# The formatter keeps code within the line length. Only long text strings,
-# such as the messages in the text catalog, may go past it.
-ignore = ["E501"]
+ignore = [
+    # The formatter keeps code within the line length. Only long text strings,
+    # such as the messages in the text catalog, may go past it.
+    "E501",
+    # A class docstring describes how to create it, so __init__ needs none.
+    "D107",
+]
+
+[lint.pydocstyle]
+convention = "google"
 
 [lint.per-file-ignores]
 # GTK code must call gi.require_version() before importing from gi.repository.
 "src/bin/mojitoshield/app.py" = ["E402"]
 # The launcher must set the import path before importing the app.
 "src/bin/launcher.py" = ["E402"]
+# In tests, the test names say what is tested; docstrings and hints are optional.
+"src/bin/tests/*" = ["D", "ANN"]

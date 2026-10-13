@@ -1,5 +1,10 @@
 #!/usr/bin/python3 -I
-"""Fixed read-only checks launched by pkexec after system authorization."""
+"""Fixed read-only checks launched by pkexec after system authorization.
+
+Installed as /usr/libexec/mojitoshield/privileged-check and run as root. It
+accepts only known check IDs as arguments, prints one JSON answer and never
+prints file contents or error details.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ MAX_OUTPUT_BYTES = 12_000
 
 
 def _result(check_id: str, status: str, message_id: str, evidence: str = "") -> dict[str, object]:
+    """Build one result in the form the app expects, with shortened evidence."""
     result: dict[str, object] = {"check_id": check_id, "status": status, "message_id": message_id}
     if evidence:
         result["evidence"] = evidence[:MAX_EVIDENCE_LENGTH]
@@ -27,6 +33,7 @@ def _result(check_id: str, status: str, message_id: str, evidence: str = "") -> 
 
 
 def _firewall() -> dict[str, object]:
+    """Ask UFW itself whether the firewall is active."""
     if not UFW_EXECUTABLE.is_file():
         return _result("firewall", "unknown", "firewall.command_unavailable")
 
@@ -63,6 +70,7 @@ def _firewall() -> dict[str, object]:
 
 
 def _grub_password_configured(text: str) -> bool:
+    """Tell whether GRUB settings set both a superuser and a password."""
     # Same rule as mojitoshield.checks.boot_menu.grub_password_configured;
     # the helper deliberately imports nothing from the app.
     lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
@@ -74,6 +82,7 @@ def _grub_password_configured(text: str) -> bool:
 
 
 def _boot_menu() -> dict[str, object]:
+    """Read the generated boot menu to see whether its password is active."""
     texts = []
     for path in GRUB_CONFIGS:
         try:
@@ -98,6 +107,15 @@ CHECKS: dict[str, Callable[[], dict[str, object]]] = {
 
 
 def main(arguments: list[str]) -> int:
+    """Run the requested checks and print their results as JSON.
+
+    Args:
+        arguments: Check IDs from the command line, such as ["firewall"].
+
+    Returns:
+        The exit code: 0 on success, 1 if a check failed, and 2 if the helper
+        is not running as root or an argument is not a known check ID.
+    """
     if os.geteuid() != 0 or not arguments or len(set(arguments)) != len(arguments):
         return 2
     if any(check_id not in CHECKS for check_id in arguments):

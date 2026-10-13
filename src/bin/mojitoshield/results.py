@@ -8,6 +8,8 @@ from enum import Enum
 
 
 class Status(str, Enum):
+    """The four results a check can have; the values are stable codes, not texts."""
+
     OK = "ok"
     WARNING = "warning"
     UNKNOWN = "unknown"

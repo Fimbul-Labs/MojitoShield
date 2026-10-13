@@ -25,11 +25,22 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CheckDefinition:
+    """One entry in the list of checks.
+
+    Attributes:
+        check_id: Stable identifier, also used in the text catalog and by the
+            Extended scan.
+        level: 1 for everyday protection, 2 for protection against someone
+            with the computer in hand.
+        run: The check's function, which returns an Outcome and never raises.
+    """
+
     check_id: str
     level: int
     run: Callable[[], Outcome]
 
     def result(self, outcome: Outcome) -> CheckResult:
+        """Label an outcome with this check's ID and level."""
         return CheckResult(self.check_id, self.level, outcome)
 
 
@@ -47,7 +58,18 @@ CHECKS = (
 
 
 def run_check(definition: CheckDefinition) -> CheckResult:
-    """Run one check; an unexpected error gives Could not determine, not a stopped scan."""
+    """Run one check, turning an unexpected error into Could not determine.
+
+    Checks handle the errors they expect themselves. This is the safety net
+    for the rest, so one broken check never stops the scan.
+
+    Args:
+        definition: The check to run.
+
+    Returns:
+        The check's result, or Could not determine with the error type as
+        evidence if the check raised.
+    """
     try:
         outcome = definition.run()
     except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
@@ -60,4 +82,5 @@ def run_check(definition: CheckDefinition) -> CheckResult:
 
 
 def run_checks() -> tuple[CheckResult, ...]:
+    """Run every check in the order shown to the user."""
     return tuple(run_check(definition) for definition in CHECKS)

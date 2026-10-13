@@ -7,7 +7,22 @@ from collections.abc import Mapping
 
 
 def identify_distribution(release: Mapping[str, str]) -> bool:
-    """Return whether os-release data identifies Mint or LMDE."""
+    """Return whether os-release data identifies Linux Mint or LMDE.
+
+    Args:
+        release: Fields from /etc/os-release, such as ID, NAME and PRETTY_NAME.
+
+    Returns:
+        True for Linux Mint and LMDE, False for anything else.
+
+    Examples:
+        >>> identify_distribution({"ID": "linuxmint", "NAME": "Linux Mint"})
+        True
+        >>> identify_distribution({"ID": "debian", "PRETTY_NAME": "LMDE 7 (gigi)"})
+        True
+        >>> identify_distribution({"ID": "ubuntu", "NAME": "Ubuntu"})
+        False
+    """
     distribution_id = release.get("ID", "").lower()
     name = release.get("NAME", "").lower()
     pretty_name = release.get("PRETTY_NAME", "").lower()
@@ -19,7 +34,12 @@ def identify_distribution(release: Mapping[str, str]) -> bool:
 
 
 def current_distribution() -> tuple[bool, str | None]:
-    """Return whether this system is supported, and its name if it has one."""
+    """Identify the running system from /etc/os-release.
+
+    Returns:
+        Whether the system is Linux Mint or LMDE, and its display name, or
+        None when os-release cannot be read or names nothing.
+    """
     try:
         release = platform.freedesktop_os_release()
     except OSError:

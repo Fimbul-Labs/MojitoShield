@@ -31,7 +31,25 @@ def _proc_net_address(hex_address: str, ipv6: bool) -> IPAddress:
 
 
 def listening_sockets(proc_net_text: str, ipv6: bool) -> set[tuple[IPAddress, int]]:
-    """Return non-loopback (address, port) pairs of TCP sockets in the listening state."""
+    r"""Find the TCP sockets that wait for connections, from /proc/net/tcp or tcp6.
+
+    Sockets on loopback addresses only accept connections from the computer
+    itself, so they are left out.
+
+    Args:
+        proc_net_text: The text of /proc/net/tcp or /proc/net/tcp6.
+        ipv6: Whether the text is from tcp6.
+
+    Returns:
+        (address, port) pairs of listening sockets on other addresses.
+
+    Examples:
+        >>> header = "sl local_address rem_address st\n"
+        >>> listening_sockets(header + "0: 00000000:0016 00000000:0000 0A\n", ipv6=False)
+        {(IPv4Address('0.0.0.0'), 22)}
+        >>> listening_sockets(header + "0: 0100007F:0277 00000000:0000 0A\n", ipv6=False)
+        set()
+    """
     sockets = set()
     for line in proc_net_text.splitlines()[1:]:
         fields = line.split()
@@ -66,7 +84,15 @@ def _is_internal_bridge(name: str) -> bool:
 
 
 def parse_interface_addresses(ip_json: str) -> dict[str, set[IPAddress]]:
-    """Parse `ip -json address show` into addresses per interface name."""
+    """Group the addresses from `ip -json address show` by network interface.
+
+    Args:
+        ip_json: The command's JSON output.
+
+    Returns:
+        Addresses by interface name, such as {"virbr0": {192.168.122.1}};
+        empty when the output is not the expected JSON.
+    """
     try:
         interfaces = json.loads(ip_json)
     except json.JSONDecodeError:
@@ -116,7 +142,24 @@ def _ssh_config_lines(path: Path, depth: int = 0) -> list[str]:
 
 
 def ssh_allows_password_or_root_login(lines: Iterable[str]) -> bool:
-    """Apply sshd's first-value-wins rule to the global login options."""
+    """Tell whether an SSH server allows password or root login.
+
+    Follows sshd: the first value of an option wins, and settings after the
+    first Match block only apply to some connections, so they are ignored.
+
+    Args:
+        lines: The lines of sshd_config, with Include files already read in.
+
+    Returns:
+        True when password, keyboard-interactive or root login is allowed,
+        including when the defaults allow it.
+
+    Examples:
+        >>> ssh_allows_password_or_root_login(["PasswordAuthentication no", "KbdInteractiveAuthentication no"])
+        False
+        >>> ssh_allows_password_or_root_login(["PermitRootLogin no"])
+        True
+    """
     values: dict[str, str] = {}
     for line in lines:
         if not line or line.startswith("#"):
@@ -160,6 +203,13 @@ def _port_list(ports: Iterable[int]) -> str:
 
 
 def check() -> Outcome:
+    """Check whether programs accept connections from other computers.
+
+    Returns:
+        OK when nothing listens, or only SSH with key login; Warning for remote
+        desktop, VNC, Telnet or SSH with password login; Could not determine
+        for other ports, which are often deliberate.
+    """
     ports = _listening_ports()
     if ports is None:
         return Outcome(Status.UNKNOWN, "network_services.status_unreadable")

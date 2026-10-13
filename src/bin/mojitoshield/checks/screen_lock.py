@@ -12,7 +12,16 @@ from mojitoshield.results import Outcome, Status
 
 @dataclass(frozen=True)
 class ScreenLockSettings:
-    """Where one desktop keeps its screen-lock settings, and the unit of its delay."""
+    """Where one desktop keeps its screen-lock settings.
+
+    Attributes:
+        name: The desktop's name as shown to the user.
+        lock_query: Command that prints whether locking is on.
+        idle_delay_query: Command that prints the delay before the screen locks.
+        idle_delay_unit_seconds: Seconds per unit of that delay (1 or 60).
+        idle_enabled_query: Command that prints whether the screensaver starts
+            by itself, for desktops that have a separate switch for it.
+    """
 
     name: str
     lock_query: list[str]
@@ -50,7 +59,20 @@ SCREEN_LOCK_SETTINGS = {
 
 
 def current_desktop(environment: Mapping[str, str] | None = None) -> str | None:
-    """Return the supported Mint desktop named by XDG_CURRENT_DESKTOP."""
+    """Find which of Mint's desktops is running, from XDG_CURRENT_DESKTOP.
+
+    Args:
+        environment: Environment variables to read; the process's own by default.
+
+    Returns:
+        "cinnamon", "mate" or "xfce", or None for any other desktop.
+
+    Examples:
+        >>> current_desktop({"XDG_CURRENT_DESKTOP": "X-Cinnamon"})
+        'cinnamon'
+        >>> current_desktop({"XDG_CURRENT_DESKTOP": "GNOME"}) is None
+        True
+    """
     if environment is None:
         environment = os.environ
     desktops = environment.get("XDG_CURRENT_DESKTOP", "").lower().split(":")
@@ -68,7 +90,22 @@ def _setting(arguments: list[str]) -> str | None:
 
 
 def parse_setting_number(value: str | None) -> int | None:
-    """Parse gsettings or xfconf numbers such as 'uint32 900' or '5'."""
+    """Read a number printed by gsettings or xfconf-query.
+
+    Args:
+        value: The printed setting, such as "uint32 900" or "5", or None.
+
+    Returns:
+        The number, or None when there is no value or it is not a number.
+
+    Examples:
+        >>> parse_setting_number("uint32 900")
+        900
+        >>> parse_setting_number("5")
+        5
+        >>> parse_setting_number("") is None
+        True
+    """
     if not value:
         return None
     try:
@@ -78,6 +115,13 @@ def parse_setting_number(value: str | None) -> int | None:
 
 
 def check() -> Outcome:
+    """Check whether the screen locks by itself after a while without use.
+
+    Returns:
+        OK with the delay in minutes, Warning when locking is off or never
+        starts by itself, or Could not determine on other desktops or when a
+        setting cannot be read.
+    """
     desktop = current_desktop()
     if desktop is None:
         return Outcome(Status.UNKNOWN, "screen_lock.desktop_not_supported")

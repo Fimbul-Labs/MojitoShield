@@ -12,7 +12,26 @@ UFW_CONFIG = Path("/etc/ufw/ufw.conf")
 
 
 def parse_ufw_enabled(contents: str) -> bool | None:
-    """Return the ENABLED value of ufw.conf; the file is a shell fragment, so the last one wins."""
+    r"""Read the ENABLED setting from the text of /etc/ufw/ufw.conf.
+
+    The file is a shell fragment, so when ENABLED appears more than once, the
+    last one wins.
+
+    Args:
+        contents: The text of ufw.conf.
+
+    Returns:
+        True for ENABLED=yes, False for ENABLED=no, or None if the setting is
+        missing or has another value.
+
+    Examples:
+        >>> parse_ufw_enabled("ENABLED=yes\n")
+        True
+        >>> parse_ufw_enabled('ENABLED=no\nENABLED="yes"\n')
+        True
+        >>> parse_ufw_enabled("# ENABLED=yes\n") is None
+        True
+    """
     enabled = None
     for line in contents.splitlines():
         match = re.match(r'^\s*ENABLED\s*=\s*["\']?(yes|no)["\']?\s*$', line, re.IGNORECASE)
@@ -22,6 +41,13 @@ def parse_ufw_enabled(contents: str) -> bool | None:
 
 
 def check() -> Outcome:
+    """Check whether the UFW firewall is turned on and was started.
+
+    Returns:
+        OK when it is on and its service is active, Warning when it is turned
+        off, and Requires extended permission when the readable settings cannot
+        confirm it.
+    """
     try:
         contents = UFW_CONFIG.read_text(encoding="utf-8")
     except FileNotFoundError:

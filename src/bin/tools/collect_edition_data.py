@@ -69,6 +69,7 @@ def screen_lock_commands() -> list[list[str]]:
 
 
 def service_commands() -> list[list[str]]:
+    """Return the commands the firewall and update checks run."""
     return [
         ["systemctl", "is-active", "ufw"],
         ["systemctl", "is-enabled", updates.MINTUPDATE_UPGRADE_TIMER],
@@ -77,6 +78,15 @@ def service_commands() -> list[list[str]]:
 
 
 def command_record(arguments: list[str]) -> dict[str, object]:
+    """Run a command the way the checks do and record its result.
+
+    Args:
+        arguments: The command and its arguments.
+
+    Returns:
+        The arguments, whether the command was available, and if so its exit
+        code and output, ready to be replayed in the tests.
+    """
     # The same runner as the checks, so the output has the same C locale.
     command = system.run_command(arguments, timeout=updates.PENDING_UPGRADES_TIMEOUT_SECONDS)
     if command is None:
@@ -90,6 +100,7 @@ def command_record(arguments: list[str]) -> dict[str, object]:
 
 
 def os_release_fields() -> dict[str, str]:
+    """Return the os-release fields that identify the edition, or none if unreadable."""
     try:
         release = platform.freedesktop_os_release()
     except OSError:
@@ -98,6 +109,7 @@ def os_release_fields() -> dict[str, str]:
 
 
 def display_manager() -> str | None:
+    """Return the login screen's program name, such as "lightdm", or None."""
     try:
         return Path(auto_login.DISPLAY_MANAGER_FILE.read_text(encoding="utf-8").strip()).name
     except (OSError, UnicodeError):
@@ -105,6 +117,7 @@ def display_manager() -> str | None:
 
 
 def apparmor_enabled() -> str | None:
+    """Return the kernel's AppArmor setting ("Y" or "N"), or None if unreadable."""
     try:
         return apparmor.APPARMOR_ENABLED.read_text(encoding="ascii").strip()
     except (OSError, UnicodeError):
@@ -128,6 +141,7 @@ def package_lists() -> dict[str, dict[str, str]]:
 
 
 def installation_finished() -> str | None:
+    """Return when the installer finished, as an ISO 8601 time, or None."""
     finished = updates.installation_finished()
     return None if finished is None else finished.isoformat(timespec="seconds")
 
@@ -160,6 +174,7 @@ def history_entries() -> list[dict[str, object]]:
 
 
 def collect() -> dict[str, object]:
+    """Gather everything the checks read on this system, as one JSON-ready object."""
     return {
         "format": FORMAT_VERSION,
         "collected": date.today().isoformat(),
@@ -179,6 +194,7 @@ def collect() -> dict[str, object]:
 
 
 def main() -> int:
+    """Print the collected data as JSON and return the exit code."""
     json.dump(collect(), sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

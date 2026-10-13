@@ -9,8 +9,9 @@ from collections import Counter
 import gi
 
 # The GTK version must be chosen before importing from gi.repository.
+gi.require_version("Gdk", "3.0")
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gio, GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk
 
 from mojitoshield import privileged, scan
 from mojitoshield.distribution import current_distribution
@@ -39,7 +40,15 @@ STATUS_ICONS = {
 
 
 def status_presentation(result: CheckResult | None) -> tuple[str, str]:
-    """Return the status text and icon name; None means the check has not finished yet."""
+    """Choose the text and standard icon that show a check's status.
+
+    Args:
+        result: The check's result, or None while it is still running.
+
+    Returns:
+        The status text, such as "OK" or "Checking…", and an icon name from
+        the system icon theme.
+    """
     if result is None:
         return translate("status.pending"), PENDING_ICON
     status = result.outcome.status
@@ -47,6 +56,7 @@ def status_presentation(result: CheckResult | None) -> tuple[str, str]:
 
 
 def set_margins(widget: Gtk.Widget, *, top: int, bottom: int, start: int, end: int) -> None:
+    """Set all four margins of a widget, in pixels."""
     widget.set_margin_top(top)
     widget.set_margin_bottom(bottom)
     widget.set_margin_start(start)
@@ -54,7 +64,15 @@ def set_margins(widget: Gtk.Widget, *, top: int, bottom: int, start: int, end: i
 
 
 def wrapping_label(*, selectable: bool = False) -> Gtk.Label:
-    """Return a start-aligned label that wraps, with lines short enough to read in wide windows."""
+    """Create a left-aligned label that wraps, with lines short enough to read.
+
+    Args:
+        selectable: Whether the text can be selected and copied. A selectable
+            label also takes a Tab stop.
+
+    Returns:
+        The new label.
+    """
     label = Gtk.Label()
     label.set_xalign(0)
     label.set_halign(Gtk.Align.START)
@@ -65,6 +83,7 @@ def wrapping_label(*, selectable: bool = False) -> Gtk.Label:
 
 
 def heading_label(text: str) -> Gtk.Label:
+    """Create a left-aligned bold label; the text is escaped, not read as markup."""
     label = Gtk.Label()
     label.set_markup(f"<b>{GLib.markup_escape_text(text)}</b>")
     label.set_xalign(0)
@@ -72,7 +91,12 @@ def heading_label(text: str) -> Gtk.Label:
 
 
 def confirm_unsupported_distribution() -> bool:
-    """Return True on Mint or LMDE, and otherwise whether the user chooses to continue."""
+    """Ask before scanning a system that is not Linux Mint or LMDE.
+
+    Returns:
+        True on Mint or LMDE without asking. On other systems, True if the
+        user chooses to continue anyway and False if they quit.
+    """
     supported, distribution_name = current_distribution()
     if supported:
         return True
@@ -126,6 +150,11 @@ class CheckRow(Gtk.ListBoxRow):
         self.show_result(None)
 
     def show_result(self, result: CheckResult | None) -> None:
+        """Show a check's status in the row, and give screen readers the same text.
+
+        Args:
+            result: The check's result, or None to show "Checking…".
+        """
         status_text, icon_name = status_presentation(result)
         self.status_label.set_text(status_text)
         self.status_icon.set_from_icon_name(icon_name, Gtk.IconSize.MENU)
@@ -133,6 +162,15 @@ class CheckRow(Gtk.ListBoxRow):
 
 
 class MojitoShieldWindow(Gtk.ApplicationWindow):
+    """The main window: a summary, the list of checks and details for the selected one.
+
+    Creating the window starts the first scan. The scan runs in a background
+    thread, and its results are shown when they arrive.
+
+    Args:
+        application: The running application the window belongs to.
+    """
+
     def __init__(self, application: Gtk.Application) -> None:
         super().__init__(application=application)
         self.set_title(translate("app.title"))
@@ -277,7 +315,7 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
         heading.set_margin_bottom(4)
         row.set_header(heading)
 
-    def _adapt_layout(self, _widget, allocation) -> None:
+    def _adapt_layout(self, _widget: Gtk.Widget, allocation: Gdk.Rectangle) -> None:
         """Stack the list and the details in narrow windows; put them side by side in wide ones."""
         orientation = (
             Gtk.Orientation.VERTICAL
@@ -443,11 +481,14 @@ class MojitoShieldWindow(Gtk.ApplicationWindow):
 
 
 class MojitoShieldApplication(Gtk.Application):
+    """The application: one window, keyboard shortcuts and the app icon."""
+
     def __init__(self) -> None:
         super().__init__(application_id=APPLICATION_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.window: MojitoShieldWindow | None = None
 
     def do_startup(self) -> None:
+        """Set the app icon and the shortcuts Ctrl+Q, F5 and Ctrl+R (called by GTK)."""
         Gtk.Application.do_startup(self)
         Gtk.Window.set_default_icon_name(APPLICATION_ID)
         quit_action = Gio.SimpleAction.new("quit", None)
@@ -457,6 +498,7 @@ class MojitoShieldApplication(Gtk.Application):
         self.set_accels_for_action("win.refresh", ["F5", "<Control>r"])
 
     def do_activate(self) -> None:
+        """Open the window, or bring it to the front if it is already open (called by GTK)."""
         # Starting the app again while it runs brings the open window to the front.
         if self.window is not None:
             self.window.present()
@@ -468,5 +510,6 @@ class MojitoShieldApplication(Gtk.Application):
 
 
 def main() -> int:
+    """Start MojitoShield and return its exit code."""
     logging.basicConfig(level=logging.WARNING)
     return MojitoShieldApplication().run(None)

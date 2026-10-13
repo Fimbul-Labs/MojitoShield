@@ -18,7 +18,11 @@ PORTABLE_CHASSIS_TYPES = frozenset({8, 9, 10, 11, 14, 30, 31, 32})
 class MountEncryption:
     """Whether a mounted filesystem lies on an encrypted (dm-crypt) device.
 
-    crypt_mapping is None when it could not be determined.
+    Attributes:
+        crypt_mapping: True or False, or None when it could not be determined.
+        source: The mounted device, such as "/dev/mapper/vgmint-root", or an
+            empty string when it could not be read.
+        filesystem_type: The filesystem, such as "ext4" or "ecryptfs".
     """
 
     crypt_mapping: bool | None
@@ -27,17 +31,52 @@ class MountEncryption:
 
 
 def parse_findmnt_pairs(output: str) -> dict[str, str]:
-    """Parse one line of `findmnt --pairs` output."""
+    """Parse one line of `findmnt --pairs` output.
+
+    Args:
+        output: A line such as 'SOURCE="/dev/sda2" FSTYPE="ext4"'.
+
+    Returns:
+        The fields by name.
+
+    Examples:
+        >>> parse_findmnt_pairs('SOURCE="/dev/sda2" FSTYPE="ext4"')
+        {'SOURCE': '/dev/sda2', 'FSTYPE': 'ext4'}
+    """
     return dict(re.findall(r'([A-Z]+)="([^"]*)"', output))
 
 
 def block_device_from_mount_source(source: str) -> str:
-    """Drop the btrfs subvolume suffix, as in /dev/sda2[/@home]."""
+    """Remove a Btrfs subvolume from a mount source, leaving the device.
+
+    Args:
+        source: A mount source, which on Btrfs ends with the subvolume.
+
+    Returns:
+        The device path.
+
+    Examples:
+        >>> block_device_from_mount_source("/dev/sda2[/@home]")
+        '/dev/sda2'
+        >>> block_device_from_mount_source("/dev/sda2")
+        '/dev/sda2'
+    """
     return re.sub(r"\[[^\]]*\]$", "", source)
 
 
 def mount_encryption(target: str) -> MountEncryption:
-    """Return whether the filesystem holding target lies on an encrypted device."""
+    """Find out whether the filesystem holding a path lies on an encrypted device.
+
+    Uses findmnt for the mounted device and lsblk for the devices below it,
+    such as LVM and dm-crypt. Both work without administrator rights.
+
+    Args:
+        target: A path, such as "/" or the home directory.
+
+    Returns:
+        What could be found; crypt_mapping is None when the device or the
+        devices below it could not be read.
+    """
     mount = system.run_command(
         ["findmnt", "--target", target, "--noheadings", "--pairs", "--output", "SOURCE,FSTYPE"]
     )
@@ -67,6 +106,13 @@ def _is_portable_computer() -> bool:
 
 
 def check() -> Outcome:
+    """Check whether the system disk or the home directory is encrypted.
+
+    Returns:
+        OK when either is encrypted, Warning when neither is (worded more
+        strongly on laptops), or Could not determine when the devices cannot be
+        read.
+    """
     system_disk = mount_encryption("/")
     if system_disk.crypt_mapping:
         return Outcome(Status.OK, "disk_encryption.system_encrypted", system_disk.source)

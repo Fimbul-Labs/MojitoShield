@@ -48,7 +48,19 @@ class PrivilegedScanFailedError(PrivilegedScanError):
 
 
 def is_trusted_system_path(path: Path, *, executable: bool) -> bool:
-    """Return whether only root can have changed this file or any folder above it."""
+    """Tell whether only root can have changed a file or any folder above it.
+
+    The Extended scan runs a program as root, so the app only uses files
+    that no ordinary user could have replaced.
+
+    Args:
+        path: The file to inspect; symbolic links are followed.
+        executable: Whether the file must also be executable.
+
+    Returns:
+        True when the file is a regular file owned by root, not writable by
+        group or others, and every folder above it is the same.
+    """
     try:
         resolved = path.resolve(strict=True)
         file_info = resolved.stat()
@@ -77,6 +89,12 @@ def is_trusted_system_path(path: Path, *, executable: bool) -> bool:
 
 
 def privileged_helper_available() -> bool:
+    """Tell whether the Extended scan can run safely on this computer.
+
+    Returns:
+        True when pkexec, the root helper and its PolicyKit policy are all
+        installed as trusted system files, as the Debian package installs them.
+    """
     return (
         is_trusted_system_path(PKEXEC_PATH, executable=True)
         and is_trusted_system_path(PRIVILEGED_HELPER_PATH, executable=True)
@@ -84,7 +102,8 @@ def privileged_helper_available() -> bool:
     )
 
 
-def _valid_helper_entry(entry: dict) -> bool:
+def _valid_helper_entry(entry: dict[str, object]) -> bool:
+    """Check one result from the helper: known status, safe message ID, short texts."""
     message_id = entry.get("message_id")
     evidence = entry.get("evidence", "")
     data = entry.get("data", {})
@@ -105,7 +124,21 @@ def _valid_helper_entry(entry: dict) -> bool:
 
 
 def parse_helper_output(requested_ids: tuple[str, ...], output: str) -> tuple[CheckResult, ...]:
-    """Turn the helper's JSON answer into results, or raise PrivilegedScanFailedError."""
+    """Turn the helper's answer into check results, trusting nothing in it.
+
+    Args:
+        requested_ids: The check IDs that were sent to the helper.
+        output: What the helper printed: JSON with a version and one result
+            per requested check.
+
+    Returns:
+        The results, in the order the checks were requested.
+
+    Raises:
+        PrivilegedScanFailedError: If the answer is too large, not valid
+            JSON, of an unknown version, or does not hold exactly one valid
+            result for each requested check.
+    """
     if len(output.encode("utf-8")) > MAX_HELPER_OUTPUT_BYTES:
         raise PrivilegedScanFailedError("helper_response_too_large")
 
@@ -148,7 +181,26 @@ def parse_helper_output(requested_ids: tuple[str, ...], output: str) -> tuple[Ch
 
 
 def run_privileged_checks(check_ids: Sequence[str]) -> tuple[CheckResult, ...]:
-    """Run only fixed, allowlisted checks through the packaged PolicyKit helper."""
+    """Run checks as root through the system's password dialog.
+
+    Only the checks in PRIVILEGED_CHECK_IDS can run, and only through the
+    helper installed by the Debian package. The user may cancel the dialog.
+
+    Args:
+        check_ids: The checks to run, such as ("firewall",).
+
+    Returns:
+        The results, in the order the checks were requested.
+
+    Raises:
+        ValueError: If no check is given, a check is repeated or a check is
+            not allowed to run with administrator rights.
+        PrivilegedHelperUnavailableError: If the helper or its policy is
+            missing or could have been changed by someone other than root.
+        PrivilegedScanCancelled: If the user cancels the password dialog.
+        PrivilegedScanFailedError: If the helper fails, times out or gives
+            an invalid answer.
+    """
     requested_ids = tuple(check_ids)
     if (
         not requested_ids

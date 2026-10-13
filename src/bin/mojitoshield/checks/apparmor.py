@@ -10,6 +10,12 @@ APPARMOR_ENABLED = Path("/sys/module/apparmor/parameters/enabled")
 
 
 def check() -> Outcome:
+    """Check whether AppArmor is turned on, from the kernel's own setting.
+
+    Returns:
+        OK or Warning from the setting, or Could not determine when AppArmor is
+        missing or its setting cannot be read.
+    """
     try:
         enabled = APPARMOR_ENABLED.read_text(encoding="ascii").strip().upper()
     except FileNotFoundError:

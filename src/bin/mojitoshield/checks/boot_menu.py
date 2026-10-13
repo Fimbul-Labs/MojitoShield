@@ -18,7 +18,24 @@ GRUB_SCRIPTS = Path("/etc/grub.d")
 
 
 def grub_password_configured(text: str) -> bool:
-    """Return whether GRUB text sets a superuser and a password, ignoring comments."""
+    r"""Tell whether GRUB settings set both a superuser and a password.
+
+    Comment lines are ignored. The root helper has its own copy of this rule,
+    because it imports nothing from the app.
+
+    Args:
+        text: GRUB configuration or the text of /etc/grub.d scripts.
+
+    Returns:
+        True only when both `set superusers=` and a `password` or
+        `password_pbkdf2` line are present.
+
+    Examples:
+        >>> grub_password_configured('set superusers="admin"\npassword_pbkdf2 admin grub.pbkdf2.x')
+        True
+        >>> grub_password_configured('# set superusers="admin"\npassword admin secret')
+        False
+    """
     lines = [line.strip() for line in text.splitlines() if not line.lstrip().startswith("#")]
     superusers = any(
         re.match(r"""^set\s+superusers\s*=\s*["']?[^"'\s]+""", line) for line in lines
@@ -29,10 +46,16 @@ def grub_password_configured(text: str) -> bool:
 
 @dataclass(frozen=True)
 class GrubScriptsPassword:
-    """Whether the scripts in /etc/grub.d set a password, and when that was last changed."""
+    """Whether the scripts in /etc/grub.d set a password.
+
+    Attributes:
+        configured: Whether the executable scripts together set one.
+        changed: Modification time of the newest script that mentions a
+            password, as a Unix timestamp; 0.0 when none does.
+    """
 
     configured: bool
-    changed: float  # Modification time of the newest script that mentions a password.
+    changed: float
 
 
 def _grub_scripts_password() -> GrubScriptsPassword:
@@ -54,6 +77,14 @@ def _grub_scripts_password() -> GrubScriptsPassword:
 
 
 def check() -> Outcome:
+    """Check whether someone at the computer can change the boot options without a password.
+
+    Returns:
+        OK when the disk is encrypted or a GRUB password is active, Warning
+        when neither protects the boot menu, Requires extended permission when
+        a new password may not be active yet, and Could not determine when GRUB
+        is not used or its files cannot be read.
+    """
     system_disk = mount_encryption("/")
     if system_disk.crypt_mapping:
         return Outcome(Status.OK, "boot_menu.protected_by_encryption", system_disk.source)

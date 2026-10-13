@@ -17,10 +17,19 @@ COMMAND_TIMEOUT_SECONDS = 3
 def run_command(
     arguments: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS
 ) -> subprocess.CompletedProcess[str] | None:
-    """Run a read-only command and return its result, or None if it could not run.
+    """Run a read-only command and capture its output.
 
-    The C locale keeps the output in English, so parsing it does not depend on
-    the user's language.
+    The command runs with the C locale, so its output is in English and can be
+    parsed the same way whatever language the user has chosen.
+
+    Args:
+        arguments: The program name followed by its arguments. The program is
+            looked up on PATH; nothing is passed through a shell.
+        timeout: Seconds to wait before giving up.
+
+    Returns:
+        The finished process, whatever its exit code, or None if the program
+        is not installed, could not start or did not finish in time.
     """
     executable = shutil.which(arguments[0])
     if executable is None:
@@ -40,8 +49,17 @@ def run_command(
 
 
 def now() -> datetime:
+    """Return the current local time; tests replace this to fix the clock."""
     return datetime.now()
 
 
 def days_since(moment: datetime) -> float:
+    """Return how many days ago a local time was, never less than zero.
+
+    Args:
+        moment: A local time without a time zone, like the ones now() returns.
+
+    Returns:
+        The age in days, including fractions; 0.0 for times in the future.
+    """
     return max(0.0, (now() - moment).total_seconds() / 86400)
