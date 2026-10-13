@@ -1,9 +1,26 @@
-venv
-.venv
-__pycache__
-Mint-distros
-.vscode
-.ruff_cache
-vscode
 # Private working notes, kept out of the public repository.
-notes
+notes/
+
+# Linux Mint installation images for test machines.
+Mint-distros/
+
+# Python and tool caches.
+__pycache__/
+*.pyc
+venv/
+.venv/
+.ruff_cache/
+
+# Editor settings.
+.vscode/
+
+# Files left behind when the package is built inside the source folder.
+*.deb
+*.buildinfo
+*.changes
+src/bin/debian/.debhelper/
+src/bin/debian/debhelper-build-stamp
+src/bin/debian/files
+src/bin/debian/mojitoshield/
+src/bin/debian/*.substvars
+src/bin/debian/*.debhelper.log
